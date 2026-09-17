@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "hunt:chrome": "node scripts/interactive_hunt.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0"

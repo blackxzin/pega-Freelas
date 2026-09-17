@@ -14,6 +14,16 @@ npm install
 npm run test:browser
 ```
 
+Caça assistida no Chromium (login manual):
+
+```bash
+MAX_JOBS=5 node scripts/interactive_hunt.mjs
+```
+
+O navegador abre, aguarda login manual, ignora Premium/bandeira dourada, lê a
+vaga, preenche proposta ou pergunta, calcula valor/prazo e pede `ENVIAR` antes
+do clique final. `BROWSER_PROFILE_DIR` pode apontar para um perfil separado.
+
 API opcional:
 
 ```bash
