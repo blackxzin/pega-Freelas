@@ -3,10 +3,11 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const rl = createInterface({ input, output });
 const ask = (question) => rl.question(question);
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const profileDir = process.env.BROWSER_PROFILE_DIR || `${root}/browser-profile`;
 mkdirSync(profileDir, { recursive: true });
 const maxJobs = Number(process.env.MAX_JOBS || 5);
@@ -59,19 +60,21 @@ async function fillJob(page, link) {
 }
 
 async function main() {
-  const context = await chromium.launchPersistentContext(profileDir, { headless: false });
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
-  const links = await page.locator('a[href]').evaluateAll((anchors) => {
+  let context;
+  try {
+    context = await chromium.launchPersistentContext(profileDir, { headless: false });
+    const page = context.pages()[0] || await context.newPage();
+    await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
+    const links = await page.locator('a[href]').evaluateAll((anchors) => {
     const seen = new Set();
     return anchors.map((anchor) => ({ href: anchor.href, text: anchor.innerText })).filter(({ href, text }) => {
       if (!/\/project(?:s)?\//i.test(href) || !text.trim() || seen.has(href)) return false;
       seen.add(href); return true;
     });
-  });
-  let processed = 0;
-  for (const item of links) {
+    });
+    let processed = 0;
+    for (const item of links) {
     if (processed >= maxJobs) break;
     if (premium.test(item.text)) continue;
     const result = await fillJob(page, item.href);
@@ -85,11 +88,13 @@ async function main() {
       if (submit) { await submit.click(); console.log('ENVIO CLICADO pelo usuário.'); }
       else console.log('Botão de envio não localizado; rascunho preservado.');
     }
+    }
+    console.log(`Concluído: ${processed} vaga(s). Chromium permanece aberto para revisão.`);
+    await ask('Pressione Enter para fechar Chromium: ');
+  } finally {
+    if (context) await context.close();
+    rl.close();
   }
-  console.log(`Concluído: ${processed} vaga(s). Chromium permanece aberto para revisão.`);
-  await ask('Pressione Enter para fechar Chromium: ');
-  await context.close();
-  rl.close();
 }
 
 main().catch((error) => { console.error(error.message); rl.close(); process.exitCode = 1; });
