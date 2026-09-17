@@ -71,7 +71,7 @@ async function fillJob(page, link) {
   if (draft.action === 'skip') return { skipped: draft.reason };
   console.log(JSON.stringify({ tasks: draft.breakdown, price_range: draft.price_range,
     client_total_range: draft.client_total_range, days_range: draft.days_range,
-    questions: draft.questions }, null, 2));
+    questions: draft.questions, commercial_reference: draft.knowledge }, null, 2));
   if (draft.action === 'question') {
     const questionLink = page.locator('a[href*="/project/message/"]').first();
     if (await questionLink.count()) {

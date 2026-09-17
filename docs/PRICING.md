@@ -4,6 +4,10 @@ O gerador é determinístico, em Python, sem API de IA. Ele identifica entregas
 por regras de texto e calcula faixas preliminares. Não interpreta linguagem com
 a precisão de um profissional nem garante o preço correto de toda vaga.
 
+A base `knowledge/freelance-market-br-2026.json`, fornecida pelo usuário, é
+consultiva. O bot registra alertas quando o valor/hora implícito sai da faixa de
+referência, mas não altera o preço calculado para forçar encaixe nessa faixa.
+
 As premissas estão em `config/pricing.json`: R$ 100 por hora de trabalho,
 mínimo de R$ 500, seis horas produtivas por dia para a equipe inteira, 20% de
 testes, 25% de reserva e dois dias úteis para revisão. Esses números são

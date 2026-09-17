@@ -21,9 +21,11 @@ export async function readSnapshot(page) {
   }
   const budgetNode = page.locator('[data-budget-max]').first();
   const deadlineNode = page.locator('[data-deadline-days]').first();
+  const clientNode = page.locator('.info-usuario.cliente .info-usuario-nome .name').first();
   const budget = await budgetNode.count() ? Number(await budgetNode.getAttribute('data-budget-max')) : null;
   const deadline = await deadlineNode.count() ? Number(await deadlineNode.getAttribute('data-deadline-days')) : null;
-  return { title: title.trim(), description, url: page.url(), is_premium: isPremium,
+  const client = await clientNode.count() ? (await clientNode.textContent()).trim() : '';
+  return { title: title.trim(), description, client, url: page.url(), is_premium: isPremium,
     budget_max: budget > 0 && Number.isFinite(budget) ? budget : null,
     deadline_days: deadline > 0 && Number.isFinite(deadline) ? deadline : null };
 }

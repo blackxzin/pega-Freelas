@@ -30,6 +30,14 @@ test('restrição explícita do projeto entra no snapshot', async ({ page }) => 
   expect((await readSnapshot(page)).is_premium).toBe(true);
 });
 
+test('nome do cliente entra no snapshot sem capturar usuários das propostas', async ({ page }) => {
+  await page.setContent('<h1 class="box-project-view-container-title"><span class="nomeProjeto">Projeto</span></h1>' +
+    '<div id="project-description">API Python detalhada.</div>' +
+    '<div class="info-usuario cliente"><div class="info-usuario-nome"><span class="name">Guilherme H.</span></div></div>' +
+    '<div class="proposal"><span class="name">Outro Usuário</span></div>');
+  expect((await readSnapshot(page)).client).toBe('Guilherme H.');
+});
+
 test('trava de envio reconhece mensagem idêntica mesmo com espaços diferentes', () => {
   expect(hasExactMessage(['Olá!  Somos dois desenvolvedores\nfull stack.'],
     'Olá! Somos dois desenvolvedores full stack.')).toBe(true);

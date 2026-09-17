@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "id": "freelance-market-br-2026-09",
+    "title": "Precificação e propostas para desenvolvimento full stack freelancer",
+    "market": "Brasil",
+    "researched_at": "2026-09",
+    "ingested_at": "2026-09-17",
+    "provenance": "Material fornecido pelo usuário; fontes não verificadas pelo bot",
+    "advisory_only": true
+  },
+  "pricing": {
+    "formula": "(renda mensal desejada + custos fixos) / horas faturáveis no mês",
+    "billable_time_fraction": [0.6, 0.7],
+    "hourly_reference_brl": {
+      "general_developer": [45, 120],
+      "mobile": [50, 300]
+    },
+    "closed_project_reference_brl": {
+      "mobile_app": [4000, 50000],
+      "institutional_site": [400, 20000],
+      "ecommerce": [2000, 20000]
+    },
+    "principles": [
+      "Calcular primeiro por entregáveis e horas; usar mercado apenas como sanity check.",
+      "Incluir reuniões, administração, testes, documentação e reserva de risco.",
+      "Não reduzir automaticamente uma estimativa viável para caber em orçamento baixo.",
+      "Dividir projetos fechados em etapas verificáveis com entregas parciais."
+    ]
+  },
+  "risk_signals": [
+    {
+      "id": "vague_scope",
+      "patterns": ["faça tudo", "completo", "explico depois"],
+      "guidance": "Pedir funcionalidades, limites e critérios de aceite antes do preço fechado."
+    },
+    {
+      "id": "legacy_code",
+      "patterns": ["legado", "já existe", "bagunçado", "refatoração"],
+      "guidance": "Propor diagnóstico inicial antes de fechar valor para toda a implementação."
+    },
+    {
+      "id": "external_integrations",
+      "patterns": ["gateway", "api de terceiros", "whatsapp", "evolution api"],
+      "guidance": "Confirmar documentação, acessos, limites, custos e regras de negócio."
+    },
+    {
+      "id": "off_platform_contact",
+      "patterns": ["chama no whatsapp", "contato fora", "meu telefone", "meu e-mail", "meu email"],
+      "guidance": "Não enviar contato pessoal; manter negociação dentro da plataforma e revisar manualmente."
+    }
+  ],
+  "proposal_structure": [
+    "Saudação com nome do cliente e do projeto quando disponíveis.",
+    "Entendimento do problema em uma ou duas frases.",
+    "Solução dividida em etapas e entregáveis verificáveis.",
+    "Valor total e prazo.",
+    "Diferencial verdadeiro: equipe, stack e portfólio comprovável.",
+    "Abertura para combinar valor após ajuste do escopo.",
+    "Chamada para conversa dentro da plataforma.",
+    "Nenhum dado de contato pessoal antes da liberação da plataforma."
+  ],
+  "platform_guidance": [
+    "Manter negociação e comunicação dentro da plataforma.",
+    "Não incluir telefone, e-mail ou link de contato na proposta.",
+    "Tratar pagamento retido pela plataforma como proteção para ambas as partes."
+  ],
+  "source_labels": [
+    "FreelancerBR",
+    "LuizTools",
+    "Robert Half Guia Salarial 2026",
+    "Glassdoor",
+    "blog 99Freelas",
+    "Conexão Freelancer",
+    "CROWD",
+    "facturapdf.app"
+  ]
+}

@@ -42,6 +42,9 @@ faixas preliminares de horas, valores e dias corridos. Configure taxa horária,
 capacidade da equipe, testes e reserva em `config/pricing.json`. Essas premissas
 não são uma média de mercado. Consulte `docs/PRICING.md` para fórmulas e limites.
 Escopos insuficientes geram perguntas, sem preencher preço/prazo fechado.
+Referências comerciais fornecidas pelo usuário ficam em
+`knowledge/freelance-market-br-2026.json`. Elas servem como sanity check e
+orientação de proposta; nunca substituem o cálculo por escopo e horas.
 Os seletores reais do 99Freelas ainda precisam de validação; os testes locais
 não comprovam funcionamento completo na conta real.
 

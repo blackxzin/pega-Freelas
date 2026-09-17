@@ -5,6 +5,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+from .knowledge import commercial_advisories
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -106,15 +108,22 @@ def build_quote(snapshot, profile, settings=None):
     deadline = snapshot.get('deadline_days')
     if isinstance(deadline, (int, float)) and days and deadline < days[1]:
         questions.append('Há flexibilidade no prazo ou podemos priorizar uma entrega menor?')
+    advisory = commercial_advisories(snapshot, settings, high, prices[1] if prices else None)
+    if 'off_platform_contact' in advisory['risk_ids']:
+        return dict(action='skip', reason='Pedido de contato fora da plataforma exige revisão manual.',
+                    suggested_price=None, estimated_days=None, questions=[], breakdown=tasks,
+                    knowledge=advisory)
     action = 'question' if questions else 'proposal'
-    opening = (f'Olá! Somos uma equipe de dois desenvolvedores full stack que trabalham juntos e temos interesse '
+    client = ' '.join(str(snapshot.get('client', '')).split())[:80]
+    greeting = f'Olá, {client}!' if client else 'Olá!'
+    opening = (f'{greeting} Somos uma equipe de dois desenvolvedores full stack que trabalham juntos e temos interesse '
                f'no projeto “{title}”.')
     question = (opening + ' ' + ' '.join(questions) +
                 ' Depois desses detalhes, podemos combinar um valor justo conforme o escopo e as prioridades. '
                 'Custos de APIs, hospedagem e serviços pagos ficam nas contas do cliente.')
     scope = '; '.join(t['deliverable'] for t in tasks[:5])
-    message = (opening + f' Pelo anúncio, a entrega envolve {scope}. '
-               'Organizamos o trabalho em alinhamento dos requisitos, implementação, testes e entrega documentada. '
+    message = (opening + f' Entendemos que a entrega envolve {scope}. '
+               'Propomos executar em etapas verificáveis: alinhamento dos requisitos, implementação, testes e entrega documentada. '
                'Validamos os fluxos principais e combinamos os critérios de aceite antes de iniciar. '
                'O prazo começa após recebermos os acessos, materiais e a confirmação do escopo. '
                'Novas funcionalidades são orçadas separadamente. '
@@ -122,10 +131,12 @@ def build_quote(snapshot, profile, settings=None):
     if action == 'proposal':
         message += (f' Para esse escopo, propomos {format_brl(prices[1])} e prazo de até {days[1]} dias corridos, '
                     'incluindo testes e uma rodada de revisão. O valor pode ser combinado conforme os detalhes '
-                    'finais do escopo e as prioridades do projeto.')
+                    'finais do escopo e as prioridades do projeto. Se fizer sentido, podemos alinhar os detalhes '
+                    'e as etapas aqui pela plataforma.')
     return dict(action=action, subject=f'Proposta: {title}', message=message, question=question,
                 suggested_price=prices[1] if prices and action == 'proposal' else None,
                 estimated_days=days[1] if days and action == 'proposal' else None,
                 estimated_hours=high, hours_range=[low, high], price_range=prices,
                 client_total_range=totals, days_range=days, questions=questions, breakdown=tasks,
-                assumptions=settings, estimate_type='preliminar por regras; validar escopo e oferta final no site')
+                assumptions=settings, knowledge=advisory,
+                estimate_type='preliminar por regras; referências de mercado são apenas sanity check')

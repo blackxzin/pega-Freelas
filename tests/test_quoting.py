@@ -54,6 +54,34 @@ def test_proposal_has_no_fabricated_experience_and_has_negotiation():
     assert 'contas do cliente' in result['message']
     assert 'experiência comprovável' not in result['message']
     assert 'estudante' not in result['message']
+    assert 'etapas verificáveis' in result['message']
+    assert 'aqui pela plataforma' in result['message']
+    assert result['knowledge']['advisory_only'] is True
+
+
+def test_client_name_personalizes_greeting():
+    result = quote('Landing page',
+                   'Landing page responsiva. Layout aprovado, textos e imagens fornecidos. '
+                   'Formulário visual, HTML e CSS, aceite em desktop e celular com uma revisão.',
+                   client='Guilherme H.')
+    assert result['message'].startswith('Olá, Guilherme H.!')
+
+
+def test_market_reference_is_advisory_and_does_not_override_calculation():
+    settings = json.loads((ROOT / 'config/pricing.json').read_text())
+    settings['hourly_rate'] = 30
+    result = build_quote({'title': 'Landing page', 'description':
+        'Landing page responsiva com layout aprovado, textos, imagens e formulário visual. '
+        'Entregar HTML e CSS com aceite em desktop e celular e uma rodada de revisão.'},
+        ProfileService().load(), settings)
+    assert result['price_range'][1] == result['hours_range'][1] * 30
+    assert any('abaixo da referência consultiva' in note for note in result['knowledge']['notes'])
+
+
+def test_off_platform_contact_requires_manual_review():
+    result = quote('Site institucional', 'Criar site institucional. Chama no WhatsApp para explicar o projeto.')
+    assert result['action'] == 'skip'
+    assert 'fora da plataforma' in result['reason']
 
 
 @pytest.mark.parametrize('extra', [{'has_gold_badge': True}, {'is_premium': True}])

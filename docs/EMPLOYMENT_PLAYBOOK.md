@@ -21,7 +21,9 @@
 
 - A proposta cobre desenvolvimento e configuração da equipe.
 - APIs, hospedagem, domínio, banco gerenciado, WhatsApp oficial, créditos e serviços pagos são contratados pelo cliente em suas próprias contas.
-- Toda proposta e toda pergunta devem informar claramente: "Podemos combinar o preço conforme o escopo e as prioridades." Sem desconto automático que torne o projeto inviável.
+- Toda proposta e toda pergunta devem informar claramente que preço/valor pode ser combinado conforme escopo e prioridades. Sem desconto automático que torne o projeto inviável.
+- Usar referências de mercado apenas como sanity check; cálculo por entregáveis, horas, risco e custos continua sendo a base.
+- Preferir etapas verificáveis para projetos maiores e manter toda conversa dentro da plataforma.
 - Estimar por entregas e horas de trabalho, incluindo testes, documentação, imprevistos e retorno do cliente. Configuração e limites em `docs/PRICING.md`.
 - Não transformar valores das propostas anteriores em referência de mercado ou experiência comprovada de entrega.
 - Preencher rascunhos é permitido. O envio final, aceite de termos e qualquer pagamento dependem da confirmação manual do usuário.
