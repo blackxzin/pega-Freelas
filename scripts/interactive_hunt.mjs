@@ -91,10 +91,11 @@ async function fillJob(page, link) {
     return { kind: 'question', draft, messagePageUrl };
   }
   const bidLink = page.locator('a[href*="/project/bid/"]').first();
-  if (await bidLink.count()) {
-    const href = await bidLink.getAttribute('href');
-    await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded' });
+  if (!await bidLink.count()) {
+    return { skipped: 'Candidatura indisponível ou proposta já existente; envio bloqueado para evitar duplicata.' };
   }
+  const href = await bidLink.getAttribute('href');
+  await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded' });
   const proposalBox = await visibleLocator(page, ['#proposta', 'textarea[name*="proposta"]', 'textarea#message']);
   if (proposalBox) {
     const subject = await visibleLocator(page, ['#assunto', '#subject', 'input[name*="assunto"]']);
