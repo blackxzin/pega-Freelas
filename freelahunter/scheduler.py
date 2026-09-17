@@ -1,0 +1,22 @@
+import threading, time
+from .core import Config, Database, ProviderRegistry, NotificationService, CircuitBreaker, run_pipeline
+
+class HunterScheduler:
+    """Periodic runner; APScheduler can wrap this class when installed."""
+    def __init__(self, registry, db=None, config=None, notifier=None):
+        self.registry=registry; self.db=db or Database(); self.config=config or Config(); self.notifier=notifier or NotificationService(); self.breaker=CircuitBreaker(); self.running=False; self._lock=threading.Lock()
+    def run_cycle(self):
+        if not self._lock.acquire(blocking=False): return {'skipped':True}
+        self.running=True; result={}
+        try:
+            for provider in self.registry.enabled():
+                if not self.breaker.allow(provider.name): result[provider.name]={'error':'cooldown'}; continue
+                try: result[provider.name]=run_pipeline(provider,self.db,auto_send=self.config.auto_send,dry_run=self.config.dry_run,kill_switch=self.config.kill_switch)
+                except Exception as exc: self.breaker.record_failure(provider.name); result[provider.name]={'error':str(exc)}; self.notifier.notify('PROVIDER_ERROR',{'provider':provider.name,'error':str(exc)})
+            return result
+        finally: self.running=False; self._lock.release()
+    def start(self, once=False):
+        while True:
+            self.run_cycle()
+            if once: return
+            time.sleep(self.config.interval*60)
