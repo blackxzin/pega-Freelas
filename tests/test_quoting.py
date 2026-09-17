@@ -14,6 +14,7 @@ def test_vague_scope_gets_question_without_binding_amount():
     assert result['suggested_price'] is None
     assert result['estimated_days'] is None
     assert result['price_range'][0] > 700
+    assert 'combinar o preço' in result['question']
 
 
 def test_complex_scope_takes_more_time_than_landing_page():
@@ -67,6 +68,14 @@ def test_invalid_configuration_rejected():
     settings['productive_team_hours_per_day'] = 0
     with pytest.raises(ValueError):
         build_quote({'title': 'API'}, ProfileService().load(), settings)
+
+
+def test_validator_requires_price_negotiation_message():
+    from freelahunter.core import Profile, ProposalDraft, ProposalValidator
+    proposal = ProposalDraft(1, 'Proposta', 'palavra ' * 110, 10, 1000, [])
+    status, reasons = ProposalValidator().validate(proposal, Profile())
+    assert status == 'FAILED'
+    assert 'proposta não informa que o valor pode ser negociado' in reasons
 
 
 def test_pipeline_does_not_send_unresolved_scope():

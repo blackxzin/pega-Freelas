@@ -109,11 +109,14 @@ class ProposalGenerator:
 
 class ProposalValidator:
     BAD=['[CLIENT]','[PROJECT]','TODO','INSERT HERE','{{name}}']
+    NEGOTIATION_TERMS=('podemos combinar o preço', 'podemos negociar o valor', 'valor pode ser negociado')
     def validate(self, proposal, profile):
         m=proposal.message.strip(); low=m.lower(); reasons=[]
         if not 100 <= len(m.split()) <= 220: reasons.append('tamanho fora de 100-220 palavras')
         if not m or not proposal.subject: reasons.append('campo vazio')
         if any(x.lower() in low for x in self.BAD): reasons.append('placeholder')
+        if not any(term in low for term in self.NEGOTIATION_TERMS):
+            reasons.append('proposta não informa que o valor pode ser negociado')
         known={x.lower() for x in profile.skills}; mentioned=re.findall(r'\b[A-Za-z][A-Za-z+#.]+\b',m)
         # only flag obvious unsupported technology claims
         if any(t in low for t in ['django','kubernetes']) and not any(t in known for t in ['django','kubernetes']): reasons.append('tecnologia não presente no perfil')
