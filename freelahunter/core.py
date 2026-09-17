@@ -195,14 +195,14 @@ def run_pipeline(provider, db, profile=None, auto_send=False, dry_run=True, kill
                  sender=None, min_score=85, min_confidence=.75, max_per_hour=3,
                  max_per_day=10):
     """Discover jobs and prepare proposals. Sending needs every policy gate to pass."""
-    profile=profile or ProfileService().load(); portfolio=PortfolioService(); ai=AIService(); gen=ProposalGenerator(); val=ProposalValidator(); sender=sender or MockSender(); policy=SendPolicyEngine(auto_send,dry_run,kill_switch,min_score,min_confidence); stats={'found':0,'new':0,'duplicates':0,'filtered':0,'analyzed':0,'proposals':0,'review':0,'sent':0,'errors':0}
+    profile=profile or ProfileService().load(); portfolio=PortfolioService(); ai=AIService(); gen=ProposalGenerator(); val=ProposalValidator(); sender=sender or MockSender(); policy=SendPolicyEngine(auto_send,dry_run,kill_switch,min_score,min_confidence); job_filter=FilterService(included_keywords=profile.preferred_jobs, excluded_keywords=profile.excluded_jobs, minimum_budget=profile.minimum_budget); stats={'found':0,'new':0,'duplicates':0,'filtered':0,'analyzed':0,'proposals':0,'review':0,'sent':0,'errors':0}
     for job in provider.search():
         stats['found']+=1
         try:
             job.platform=provider.name; job,dup=db.upsert_job(job)
             if dup: stats['duplicates']+=1; continue
             stats['new']+=1
-            if not FilterService().accepts(job): job.status=JobStatus.REJECTED; continue
+            if not job_filter.accepts(job): job.status=JobStatus.REJECTED; continue
             stats['filtered']+=1; projects=portfolio.relevant(job,profile); analysis=ai.analyze(job,profile,projects); stats['analyzed']+=1; price,_=PriceEstimator(hourly_rate=100,minimum_project_price=200).estimate((analysis.estimated_hours_min+analysis.estimated_hours_max)//2, budget_max=job.budget_max); p=gen.generate(job,analysis,profile,projects,price); val.validate(p,profile); stats['proposals']+=1; key=sha(provider.name+job.external_id+profile.id)
             within_limits=(db.within_limit('send-hour',max_per_hour,3600) and db.within_limit('send-day',max_per_day,86400))
             decision=policy.decide(provider,analysis,p,sender,db.already_sent(key),within_limits)

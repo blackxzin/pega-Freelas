@@ -41,3 +41,21 @@ def test_profile_loads_team_and_client_cost_rules(tmp_path):
     assert profile.client_pays_paid_services is True
     assert 'equipe de dois desenvolvedores full stack' in proposal.message
     assert 'contas do cliente' in proposal.message
+
+
+def test_pipeline_applies_profile_job_rules():
+    profile = Profile(
+        preferred_jobs=['API'],
+        excluded_jobs=['Premium'],
+        minimum_budget=500,
+    )
+    jobs = [
+        Job('API pública', 'Criar API REST', external_id='good', url='https://mock/good', budget_max=800),
+        Job('API Premium', 'Criar API Premium', external_id='premium', url='https://mock/premium', budget_max=800),
+    ]
+
+    stats = run_pipeline(MockProvider(jobs), Database(':memory:'), profile=profile)
+
+    assert stats['found'] == 2
+    assert stats['filtered'] == 1
+    assert stats['proposals'] == 1
