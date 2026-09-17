@@ -35,6 +35,16 @@ O provider HTTP (`HttpJobProvider`) aceita apenas feeds JSON via HTTPS e somente
 consulta vagas. Envio continua separado, protegido por `DRY_RUN`, kill switch,
 provider autorizado e aprovação explícita.
 
+## Estimativas e qualidade das propostas
+
+O fluxo Chromium usa `freelahunter/quoting.py` para decompor entregas e gerar
+faixas preliminares de horas, valores e dias corridos. Configure taxa horária,
+capacidade da equipe, testes e reserva em `config/pricing.json`. Essas premissas
+não são uma média de mercado. Consulte `docs/PRICING.md` para fórmulas e limites.
+Escopos insuficientes geram perguntas, sem preencher preço/prazo fechado.
+Os seletores reais do 99Freelas ainda precisam de validação; os testes locais
+não comprovam funcionamento completo na conta real.
+
 Defaults são `DRY_RUN=true`, `AUTO_SEND=false`, `AUTO_SEND_KILL_SWITCH=true`. Somente `AuthorizedMockProvider` declara envio autorizado. Integrações reais devem implementar `JobProvider`/`ProposalSender` sem bypass de CAPTCHA, Cloudflare ou rate limits.
 
 Arquitetura detalhada: `docs/ARCHITECTURE.md`, `docs/AUTOMATION.md`, `docs/SECURITY.md`.

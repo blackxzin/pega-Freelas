@@ -6,7 +6,7 @@ import pytest
 from freelahunter.core import *
 from freelahunter.providers import HttpJobProvider
 
-def job(): return Job('API FastAPI', 'API REST Python FastAPI SQL', external_id='1', url='https://x/1', skills=['Python','FastAPI','SQL'], budget_min=500, budget_max=2000)
+def job(): return Job('Landing page', 'Criar uma landing page responsiva com apresentação dos serviços, depoimentos e contato. Fornecemos layout aprovado, textos e imagens finais. A entrega inclui HTML e CSS, publicação na hospedagem do cliente e uma rodada de revisão com comparação visual em desktop e celular.', external_id='1', url='https://x/1', skills=['Python','FastAPI','SQL'], budget_min=500, budget_max=20000)
 
 def test_authorized_autosend_is_idempotent():
     db=Database(':memory:'); sender=MockSender(); p=AuthorizedMockProvider([job()])

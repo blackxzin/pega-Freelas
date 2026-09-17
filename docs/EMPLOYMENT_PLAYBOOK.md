@@ -21,4 +21,7 @@
 
 - A proposta cobre desenvolvimento e configuração da equipe.
 - APIs, hospedagem, domínio, banco gerenciado, WhatsApp oficial, créditos e serviços pagos são contratados pelo cliente em suas próprias contas.
+- Informar que podemos combinar o preço conforme escopo e prioridades, sem desconto automático que torne o projeto inviável.
+- Estimar por entregas e horas de trabalho, incluindo testes, documentação, imprevistos e retorno do cliente. Configuração e limites em `docs/PRICING.md`.
+- Não transformar valores das propostas anteriores em referência de mercado ou experiência comprovada de entrega.
 - Preencher rascunhos é permitido. O envio final, aceite de termos e qualquer pagamento dependem da confirmação manual do usuário.

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urlparse
+import re
 
 from .core import Job, ProposalDraft
 
@@ -53,7 +54,7 @@ class BrowserActionPolicy:
     def allow(self, action_label: str) -> None:
         normalized = action_label.casefold()
         if not self.premium_features_enabled and any(
-            marker in normalized for marker in self.PREMIUM_MARKERS
+            re.search(r'\b' + re.escape(marker) + r'\b', normalized) for marker in self.PREMIUM_MARKERS
         ):
             raise PremiumFeatureError('premium platform features are disabled')
 

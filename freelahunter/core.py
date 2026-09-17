@@ -79,22 +79,33 @@ class FilterService:
         text=(job.title+' '+job.description+' '+' '.join(job.skills)).lower()
         if self.excluded and any(x in text for x in self.excluded): return False
         if self.included and not any(x in text for x in self.included): return False
-        if self.minimum_budget is not None and (job.budget_max or 0)<self.minimum_budget: return False
+        if self.minimum_budget is not None and job.budget_max is not None and job.budget_max<self.minimum_budget: return False
         if self.maximum_budget is not None and (job.budget_min or 0)>self.maximum_budget: return False
         return True
 
 class AIService:
     def analyze(self, job, profile, projects):
+        from .quoting import build_quote
+        quote = build_quote({'title': job.title, 'description': job.description}, profile)
         ps={x.lower() for x in profile.skills}; js={x.lower() for x in job.skills}; matched=sorted(js & ps); missing=sorted(js-ps); score=max(0,min(100, 50+len(matched)*15-len(missing)*8)); hours=max(4, len(job.skills)*3)
+        if quote.get('hours_range') and quote['hours_range'][0] is not None:
+            low, high = quote['hours_range']
+            return Analysis(score, score>=60, 'hard' if high > 100 else 'medium', matched, missing,
+                            [t['deliverable'] for t in quote['breakdown']], quote['questions'],
+                            [], low, high, .85, 'Estimativa preliminar por entregas; confirmar escopo.')
         return Analysis(score, score>=60, 'hard' if len(job.skills)>5 else 'medium', matched, missing, job.skills, [], [p.name for p in projects], hours, hours+7, .85, f'{len(matched)} competências compatíveis; escopo requer validação.')
 
 class ProposalGenerator:
     def generate(self, job, analysis, profile, projects, price=None):
-        tech=', '.join(analysis.matched_skills) or ', '.join(profile.skills[:3]); project=projects[0].name if projects else 'experiência com projetos de automação'
-        msg=f'Olá! Eu e minha {profile.team_description} temos interesse em {job.title.lower()}. O objetivo é entregar uma solução funcional, documentada e fácil de manter. Podemos abordar o escopo com {tech}, organizando implementação em etapas, validando requisitos e deixando testes para fluxos críticos. Temos experiência comprovável em {project}, além de Git, APIs e comunicação clara. Primeiro confirmamos fluxo principal, entradas, saídas e critérios de aceite; depois definimos tarefas curtas para reduzir riscos e validar cada etapa. Para estimar com precisão: quais integrações, ambiente de hospedagem e critérios de aceite são prioritários?'
-        if profile.client_pays_paid_services:
-            msg += ' Custos de APIs, hospedagem, domínio, mensagens e créditos ficam nas contas do cliente; nossa proposta cobre desenvolvimento e configuração.'
-        return ProposalDraft(job.id or 0, f'Proposta: {job.title}', msg, (analysis.estimated_hours_min+analysis.estimated_hours_max)//2, price, ['Quais são os critérios de aceite?'])
+        from .quoting import build_quote
+        quote = build_quote({'title': job.title, 'description': job.description,
+                             'budget_max': job.budget_max}, profile)
+        if quote['action'] == 'skip':
+            raise ValueError(quote['reason'])
+        message = quote['question'] if quote['action'] == 'question' else quote['message']
+        return ProposalDraft(job.id or 0, quote['subject'], message,
+                             quote['estimated_hours'] or 0, quote['suggested_price'],
+                             quote['questions'])
 
 class ProposalValidator:
     BAD=['[CLIENT]','[PROJECT]','TODO','INSERT HERE','{{name}}']
@@ -114,7 +125,8 @@ class PriceEstimator:
         if self.hourly_rate is None and self.minimum is None and budget_max is None: return None, 'informações insuficientes'
         value=(hours*self.hourly_rate if self.hourly_rate else self.preferred or self.minimum or budget_max)
         if self.minimum: value=max(value,self.minimum)
-        if budget_max: value=min(value,budget_max)
+        if budget_max is not None and value > budget_max:
+            return round(value,2), 'orçamento insuficiente; negociar escopo sem reduzir o preço calculado'
         return round(value,2), 'estimativa baseada em horas, taxa e orçamento anunciado'
 
 class MockSender:
@@ -155,6 +167,7 @@ class SendPolicyEngine:
     def __init__(self, auto_send=False, dry_run=True, kill_switch=True, min_score=85, min_confidence=.75): self.auto_send=auto_send; self.dry_run=dry_run; self.kill_switch=kill_switch; self.min_score=min_score; self.min_confidence=min_confidence
     def decide(self, provider, analysis, proposal, sender, already_sent=False, within_limits=True):
         if already_sent: return 'BLOCKED'
+        if proposal.questions or proposal.suggested_price is None: return 'REVIEW_REQUIRED'
         if not provider.capabilities.authorized_send or not self.auto_send or self.dry_run or self.kill_switch: return 'REVIEW_REQUIRED'
         if analysis.score<self.min_score or analysis.confidence<self.min_confidence or proposal.validation_status!='PASSED' or not within_limits or not sender.validate_credentials() or not sender.can_send(): return 'REVIEW_REQUIRED'
         return 'AUTO_SEND'

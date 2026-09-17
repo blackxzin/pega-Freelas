@@ -3,12 +3,12 @@ from freelahunter.core import AuthorizedMockProvider, Database, Job, MockSender,
 
 def make_job(number):
     return Job(
-        f'API FastAPI {number}',
-        'Criar API REST Python FastAPI SQL',
+        f'Landing page {number}',
+        'Criar uma landing page responsiva com apresentação dos serviços, depoimentos e contato. Fornecemos layout aprovado, textos e imagens finais. A entrega inclui HTML e CSS, publicação na hospedagem do cliente e uma rodada de revisão com comparação visual em desktop e celular.',
         external_id=str(number),
         url=f'https://mock.test/jobs/{number}',
         budget_min=500,
-        budget_max=2000,
+        budget_max=20000,
         skills=['Python', 'FastAPI', 'SQL'],
     )
 

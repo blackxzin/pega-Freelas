@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { readSnapshot } from './job_snapshot.mjs';
 
 const rl = createInterface({ input, output });
 const ask = (question) => rl.question(question);
@@ -34,10 +35,23 @@ async function visibleLocator(page, selectors) {
 
 async function fillJob(page, link) {
   await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  const text = await page.locator('body').innerText();
-  if (premium.test(text)) return { skipped: 'premium marker' };
-  const title = await page.locator('h1').first().textContent().catch(() => null) || await page.title();
-  const draft = generate({ title: title.trim(), description: text, url: page.url() });
+  let snapshot;
+  try { snapshot = await readSnapshot(page); }
+  catch (error) { return { skipped: error.message }; }
+  const draft = generate(snapshot);
+  if (draft.action === 'skip') return { skipped: draft.reason };
+  console.log(JSON.stringify({ tasks: draft.breakdown, price_range: draft.price_range,
+    client_total_range: draft.client_total_range, days_range: draft.days_range,
+    questions: draft.questions }, null, 2));
+  if (draft.action === 'question') {
+    const question = await visibleLocator(page, ['#mensagem-pergunta', 'textarea[name*="pergunta"]']);
+    if (!question) {
+      console.log(draft.question);
+      return { skipped: 'Escopo exige esclarecimento; formulário de pergunta não localizado.' };
+    }
+    await question.fill(draft.question);
+    return { kind: 'question', draft };
+  }
   const proposalBox = await visibleLocator(page, ['#proposta', 'textarea[name*="proposta"]', 'textarea#message']);
   if (proposalBox) {
     const subject = await visibleLocator(page, ['#assunto', '#subject', 'input[name*="assunto"]']);
@@ -77,14 +91,19 @@ async function main() {
     for (const item of links) {
     if (processed >= maxJobs) break;
     if (premium.test(item.text)) continue;
-    const result = await fillJob(page, item.href);
+    const jobPage = await context.newPage();
+    await jobPage.bringToFront();
+    const result = await fillJob(jobPage, item.href);
     if (result.skipped) { console.log(`IGNORADA: ${result.skipped} — ${item.href}`); continue; }
     processed += 1;
     console.log(`${result.kind.toUpperCase()} preenchida: ${result.draft.subject || item.href}`);
     console.log(`Valor sugerido: R$ ${result.draft.suggested_price ?? 'a combinar'} | prazo: ${result.draft.estimated_days} dias`);
     const answer = await ask('Digite ENVIAR para clicar no envio desta vaga, ou Enter para deixar como rascunho: ');
     if (answer.trim() === 'ENVIAR') {
-      const submit = await visibleLocator(page, ['#enviar-proposta', 'button:has-text("Enviar proposta")', 'button:has-text("Enviar pergunta")', 'input[type="submit"]']);
+      const selectors = result.kind === 'question'
+        ? ['button:has-text("Enviar pergunta")']
+        : ['#enviar-proposta', 'button:has-text("Enviar proposta")'];
+      const submit = await visibleLocator(jobPage, selectors);
       if (submit) { await submit.click(); console.log('ENVIO CLICADO pelo usuário.'); }
       else console.log('Botão de envio não localizado; rascunho preservado.');
     }

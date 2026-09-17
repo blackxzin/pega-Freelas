@@ -60,6 +60,7 @@ def test_browser_flow_never_prefills_unvalidated_proposal():
 def test_browser_policy_blocks_paid_features_and_premium_projects():
     policy = BrowserActionPolicy()
     assert policy.project_is_eligible('Integração de sistemas via API')
+    assert policy.project_is_eligible('Projeto profissional de programação')
     assert not policy.project_is_eligible('Projeto exclusivo Premium')
     with pytest.raises(PremiumFeatureError, match='disabled'):
         policy.allow('Assinar plano Pro')

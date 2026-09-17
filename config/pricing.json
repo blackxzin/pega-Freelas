@@ -1,0 +1,9 @@
+{
+  "hourly_rate": 100,
+  "minimum_price": 500,
+  "productive_team_hours_per_day": 6,
+  "risk_buffer": 0.25,
+  "qa_fraction": 0.2,
+  "feedback_business_days": 2,
+  "fee_fraction": 0.2
+}

@@ -6,7 +6,7 @@ experience: []
 education: ""
 team_description: equipe de dois desenvolvedores full stack
 client_pays_paid_services: true
-preferred_jobs: [Python, FastAPI, API, automação, integração, backend, frontend, sistema web, SaaS, n8n]
+preferred_jobs: [Python, FastAPI, API, automação, integração, backend, frontend, sistema web, SaaS, n8n, landing page, site]
 excluded_jobs: [Premium, Projeto Exclusivo, bandeira dourada, selo dourado, apostas, Betano, Estrela Bet, disparo em massa, LoRA, ComfyUI]
 minimum_budget: 500
 languages: [Português]
