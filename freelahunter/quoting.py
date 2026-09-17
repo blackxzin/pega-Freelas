@@ -13,11 +13,15 @@ def normalized(value):
                    if not unicodedata.combining(c))
 
 
+def format_brl(value):
+    return f'R$ {value:,.2f}'.replace(',', '_').replace('.', ',').replace('_', '.')
+
+
 # Person-hours for bounded deliverables; rate is an internal assumption.
 RULES = [
     ('landing page', r'landing page|pagina unica', 12, 24),
     ('site institucional', r'site institucional|site simples|website', 20, 40),
-    ('blog e gerenciamento de conteúdo', r'wordpress|\bblog\b', 20, 40),
+    ('site em CMS ou blog', r'wordpress|\bblog\b', 20, 40),
     ('API e persistência', r'\bapi\b|fastapi|backend|back-end', 24, 48),
     ('interface web', r'frontend|front-end|\breact\b|next\.?js', 24, 48),
     ('automação de fluxo', r'automacao|\bn8n\b|\bbot\b', 16, 32),
@@ -58,15 +62,24 @@ def build_quote(snapshot, profile, settings=None):
         questions.append('Podemos avaliar o código atual e reproduzir o problema antes de fechar o valor?')
     if re.search(r'\bsaas\b|marketplace|completo|\bia\b|lora|comfyui', text):
         questions.append('Quais funcionalidades entram no primeiro MVP e quais ficam para etapas posteriores?')
-    if re.search(r'wordpress|libras|lora|comfyui|android|\bios\b', text):
+    if re.search(r'pagamento|checkout|\bpix\b|boleto|cartao', text):
+        questions.append('Qual gateway de pagamento será usado e quais meios, regras de cobrança, repasse e conciliação entram no escopo?')
+    if re.search(r'plataforma', text) and not re.search(r'criterios de aceite|fluxos detalhados|documentacao funcional', text):
+        questions.append('Quais perfis de usuário, telas e fluxos entram na primeira entrega da plataforma?')
+    if re.search(r'landing pages', text):
+        questions.append('Quantas landing pages serão entregues e o cliente fornecerá layout, textos, imagens, domínio e regras dos formulários?')
+    elif re.search(r'site profissional|website', text) and not re.search(r'\b\d+\s+paginas|pagina unica|layout aprovado', text):
+        questions.append('Quantas páginas e seções entram no site e quem fornecerá layout, textos, imagens e formulários?')
+    if re.search(r'libras|lora|comfyui|android|\bios\b', text):
         questions.append('Precisamos confirmar internamente a experiência necessária nessa especialidade.')
     if re.search(r'\bsem\b|nao precisa|nao incluir|ja existe|ja esta pronto|apenas corrigir', text):
         questions.append('Quais partes já estão prontas e quais entregas devem ficar fora do orçamento?')
-    quantities = re.findall(r'\b(\d+)\s+(?:telas|paginas|integracoes|endpoints|usuarios|produtos)\b', text)
+    quantities = re.findall(r'\b(\d+)\s+(?:telas|paginas|landing pages|integracoes|endpoints|usuarios|produtos)\b', text)
     if any(int(value) > 3 for value in quantities):
         questions.append('Podemos detalhar as telas, integrações e volumes para estimar cada entrega?')
     blocked = snapshot.get('has_gold_badge') is True or snapshot.get('is_premium') is True
-    excluded = [term for term in profile.excluded_jobs if normalized(term) in text]
+    excluded = [term for term in profile.excluded_jobs
+                if re.search(r'(?<!\w)' + re.escape(normalized(term)) + r'(?!\w)', text)]
     if blocked or excluded:
         return dict(action='skip', reason='Vaga restrita ou excluída pelo perfil.', suggested_price=None,
                     estimated_days=None, questions=[], breakdown=tasks)
@@ -94,19 +107,22 @@ def build_quote(snapshot, profile, settings=None):
     if isinstance(deadline, (int, float)) and days and deadline < days[1]:
         questions.append('Há flexibilidade no prazo ou podemos priorizar uma entrega menor?')
     action = 'question' if questions else 'proposal'
-    opening = f'Olá! Somos uma equipe de dois desenvolvedores full stack e temos interesse no projeto “{title}”.'
+    opening = (f'Olá! Somos uma equipe de dois desenvolvedores full stack que trabalham juntos e temos interesse '
+               f'no projeto “{title}”.')
     question = (opening + ' ' + ' '.join(questions) +
-                ' Podemos combinar o preço conforme o escopo e as prioridades. '
+                ' Depois desses detalhes, podemos combinar um valor justo conforme o escopo e as prioridades. '
                 'Custos de APIs, hospedagem e serviços pagos ficam nas contas do cliente.')
     scope = '; '.join(t['deliverable'] for t in tasks[:5])
     message = (opening + f' Pelo anúncio, a entrega envolve {scope}. '
                'Organizamos o trabalho em alinhamento dos requisitos, implementação, testes e entrega documentada. '
                'Validamos os fluxos principais e combinamos os critérios de aceite antes de iniciar. '
                'O prazo começa após recebermos os acessos, materiais e a confirmação do escopo. '
-               'Novas funcionalidades são orçadas separadamente. Podemos combinar o preço conforme o escopo e as prioridades. '
+               'Novas funcionalidades são orçadas separadamente. '
                'Nossa proposta cobre desenvolvimento e configuração; APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.')
     if action == 'proposal':
-        message += f' Para esse escopo, estimamos até {days[1]} dias corridos, incluindo testes e uma rodada de revisão.'
+        message += (f' Para esse escopo, propomos {format_brl(prices[1])} e prazo de até {days[1]} dias corridos, '
+                    'incluindo testes e uma rodada de revisão. O valor pode ser combinado conforme os detalhes '
+                    'finais do escopo e as prioridades do projeto.')
     return dict(action=action, subject=f'Proposta: {title}', message=message, question=question,
                 suggested_price=prices[1] if prices and action == 'proposal' else None,
                 estimated_days=days[1] if days and action == 'proposal' else None,

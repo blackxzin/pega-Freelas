@@ -14,7 +14,8 @@ def test_vague_scope_gets_question_without_binding_amount():
     assert result['suggested_price'] is None
     assert result['estimated_days'] is None
     assert result['price_range'][0] > 700
-    assert 'combinar o preço' in result['question']
+    assert 'podemos combinar um valor justo' in result['question']
+    assert 'equipe de dois desenvolvedores full stack que trabalham juntos' in result['question']
 
 
 def test_complex_scope_takes_more_time_than_landing_page():
@@ -46,7 +47,10 @@ def test_proposal_has_no_fabricated_experience_and_has_negotiation():
     result = quote('Landing page', description)
     assert result['action'] == 'proposal'
     assert result['estimated_days'] > 1
-    assert 'combinar o preço' in result['message']
+    assert 'O valor pode ser combinado' in result['message']
+    assert 'equipe de dois desenvolvedores full stack que trabalham juntos' in result['message']
+    assert f"R$ {result['suggested_price']:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.') in result['message']
+    assert f"prazo de até {result['estimated_days']} dias" in result['message']
     assert 'contas do cliente' in result['message']
     assert 'experiência comprovável' not in result['message']
     assert 'estudante' not in result['message']
@@ -63,6 +67,27 @@ def test_unknown_work_cannot_get_invented_quote():
     assert result['action'] == 'question'
 
 
+def test_plural_landing_pages_require_quantity_and_assets():
+    result = quote('Desenvolvimento de landing pages',
+                   'Criar landing pages profissionais para três nichos diferentes, com SEO e CTA.')
+    assert result['action'] == 'question'
+    assert result['suggested_price'] is None
+    assert any('Quantas landing pages' in question for question in result['questions'])
+
+
+def test_payment_project_requires_gateway_and_business_rules():
+    result = quote('Central de pagamentos',
+                   'Receber pagamentos por Pix, boleto e cartões de crédito e débito.')
+    assert result['action'] == 'question'
+    assert any('gateway' in question for question in result['questions'])
+
+
+def test_wordpress_site_does_not_claim_missing_specialty():
+    result = quote('Criação de site WordPress',
+                   'Criar um site profissional responsivo; páginas e materiais serão alinhados antes do início.')
+    assert not any('experiência necessária' in question for question in result['questions'])
+
+
 def test_invalid_configuration_rejected():
     settings = json.loads((ROOT / 'config/pricing.json').read_text())
     settings['productive_team_hours_per_day'] = 0
@@ -76,6 +101,15 @@ def test_validator_requires_price_negotiation_message():
     status, reasons = ProposalValidator().validate(proposal, Profile())
     assert status == 'FAILED'
     assert 'proposta não informa que o valor pode ser negociado' in reasons
+
+
+def test_validator_requires_two_developer_team_message():
+    from freelahunter.core import Profile, ProposalDraft, ProposalValidator
+    message = ('Podemos negociar o valor conforme o escopo. ' + 'palavra ' * 105)
+    proposal = ProposalDraft(1, 'Proposta', message, 10, 1000, [])
+    status, reasons = ProposalValidator().validate(proposal, Profile())
+    assert status == 'FAILED'
+    assert 'proposta não apresenta a equipe de dois desenvolvedores full stack' in reasons
 
 
 def test_pipeline_does_not_send_unresolved_scope():

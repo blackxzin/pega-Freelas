@@ -1,6 +1,8 @@
 // Restrict analysis to the project description, excluding navigation and ads.
 export async function readSnapshot(page) {
-  const title = await page.locator('h1').first().textContent();
+  const titleNode = page.locator('.box-project-view-container-title .nomeProjeto').first();
+  if (!await titleNode.count()) throw new Error('Título da vaga não localizado; revisar seletores antes de orçar.');
+  const title = await titleNode.textContent();
   const candidates = ['[itemprop="description"]', '#project-description',
     '.project-description', '.project-details .description'];
   let description = '';
@@ -12,7 +14,7 @@ export async function readSnapshot(page) {
     }
   }
   if (!description) throw new Error('Descrição isolada da vaga não localizada; revisar seletores antes de orçar.');
-  const badge = page.locator('[data-premium="true"], .project-premium, .project-exclusive, img[alt*="Premium"], [title="Projeto exclusivo"]');
+  const badge = page.locator('.box-project-view-principal > .flags img[alt*="Projeto exclusivo"], .box-project-view-principal > .flags img[src*="project_exclusive"], [data-project-premium="true"]');
   let isPremium = false;
   for (const node of await badge.all()) {
     if (await node.isVisible()) isPremium = true;
