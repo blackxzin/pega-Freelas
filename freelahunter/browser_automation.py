@@ -18,6 +18,22 @@ class BrowserPage(Protocol):
     def click(self, selector: str) -> None: ...
 
 
+class PlaywrightPageAdapter:
+    """Adapt a synchronous Playwright page to the safe browser protocol."""
+
+    def __init__(self, page):
+        self.page = page
+
+    def open(self, url: str) -> None:
+        self.page.goto(url, wait_until='domcontentloaded')
+
+    def fill(self, selector: str, value: str) -> None:
+        self.page.locator(selector).fill(value)
+
+    def click(self, selector: str) -> None:
+        self.page.locator(selector).click()
+
+
 class BrowserAutomationError(ValueError):
     """Raised before an unsafe browser action reaches a page."""
 

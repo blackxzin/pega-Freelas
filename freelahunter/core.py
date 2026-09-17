@@ -159,6 +159,17 @@ class SendPolicyEngine:
         if analysis.score<self.min_score or analysis.confidence<self.min_confidence or proposal.validation_status!='PASSED' or not within_limits or not sender.validate_credentials() or not sender.can_send(): return 'REVIEW_REQUIRED'
         return 'AUTO_SEND'
 
+
+class RuntimeControl:
+    """Mutable process controls shared by API and scheduler."""
+
+    def __init__(self, kill_switch: bool = True):
+        self.kill_switch = kill_switch
+
+    def set_kill_switch(self, enabled: bool) -> bool:
+        self.kill_switch = enabled
+        return self.kill_switch
+
 class Database:
     def __init__(self, path='freelahunter.db'):
         self.conn=sqlite3.connect(path, check_same_thread=False); self.lock=threading.Lock(); self.conn.execute('''CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, provider TEXT, external_id TEXT, canonical_url TEXT, title TEXT, description TEXT, budget_min REAL, budget_max REAL, currency TEXT, skills TEXT, status TEXT, content_hash TEXT, first_seen_at TEXT, last_seen_at TEXT, UNIQUE(provider,external_id))'''); self.conn.execute('''CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY, job_id INTEGER, idempotency_key TEXT UNIQUE, subject TEXT, message TEXT, validation_status TEXT, status TEXT, suggested_price REAL, sent_external_id TEXT)'''); self.conn.execute('''CREATE TABLE IF NOT EXISTS limits (bucket TEXT PRIMARY KEY, count INTEGER, reset_at TEXT)'''); self.conn.execute('''CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY, event TEXT, run_id TEXT, job_id INTEGER, created_at TEXT, details TEXT)'''); self.conn.execute('''CREATE TABLE IF NOT EXISTS limit_events (id INTEGER PRIMARY KEY, bucket TEXT, created_at REAL)'''); self.conn.commit()
@@ -193,9 +204,9 @@ class Database:
 
 def run_pipeline(provider, db, profile=None, auto_send=False, dry_run=True, kill_switch=True,
                  sender=None, min_score=85, min_confidence=.75, max_per_hour=3,
-                 max_per_day=10):
+                 max_per_day=10, runtime_control=None):
     """Discover jobs and prepare proposals. Sending needs every policy gate to pass."""
-    profile=profile or ProfileService().load(); portfolio=PortfolioService(); ai=AIService(); gen=ProposalGenerator(); val=ProposalValidator(); sender=sender or MockSender(); policy=SendPolicyEngine(auto_send,dry_run,kill_switch,min_score,min_confidence); job_filter=FilterService(included_keywords=profile.preferred_jobs, excluded_keywords=profile.excluded_jobs, minimum_budget=profile.minimum_budget); stats={'found':0,'new':0,'duplicates':0,'filtered':0,'analyzed':0,'proposals':0,'review':0,'sent':0,'errors':0}
+    profile=profile or ProfileService().load(); portfolio=PortfolioService(); ai=AIService(); gen=ProposalGenerator(); val=ProposalValidator(); sender=sender or MockSender(); effective_kill_switch=kill_switch or bool(runtime_control and runtime_control.kill_switch); policy=SendPolicyEngine(auto_send,dry_run,effective_kill_switch,min_score,min_confidence); job_filter=FilterService(included_keywords=profile.preferred_jobs, excluded_keywords=profile.excluded_jobs, minimum_budget=profile.minimum_budget); stats={'found':0,'new':0,'duplicates':0,'filtered':0,'analyzed':0,'proposals':0,'review':0,'sent':0,'errors':0}
     for job in provider.search():
         stats['found']+=1
         try:

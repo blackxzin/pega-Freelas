@@ -1,4 +1,10 @@
+import json
+from io import BytesIO
+
+import pytest
+
 from freelahunter.core import *
+from freelahunter.providers import HttpJobProvider
 
 def job(): return Job('API FastAPI', 'API REST Python FastAPI SQL', external_id='1', url='https://x/1', skills=['Python','FastAPI','SQL'], budget_min=500, budget_max=2000)
 
@@ -59,3 +65,45 @@ def test_pipeline_applies_profile_job_rules():
     assert stats['found'] == 2
     assert stats['filtered'] == 1
     assert stats['proposals'] == 1
+
+
+def test_runtime_control_kill_switch_blocks_authorized_send():
+    control = RuntimeControl(False)
+    control.set_kill_switch(True)
+    sender = MockSender()
+
+    stats = run_pipeline(
+        AuthorizedMockProvider([job()]),
+        Database(':memory:'),
+        auto_send=True,
+        dry_run=False,
+        kill_switch=False,
+        runtime_control=control,
+        sender=sender,
+    )
+
+    assert stats['sent'] == 0
+    assert not sender.sent
+
+
+def test_http_provider_reads_json_feed_without_send(monkeypatch):
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({'jobs': [{'title': 'API', 'description': 'Criar API', 'external_id': '1'}]}).encode()
+
+    monkeypatch.setattr('freelahunter.providers.urlopen', lambda request, timeout: Response())
+    provider = HttpJobProvider('https://feed.example/jobs', name='feed')
+
+    jobs = provider.search()
+
+    assert len(jobs) == 1
+    assert jobs[0].title == 'API'
+    assert jobs[0].platform == 'feed'
+    assert provider.capabilities.authorized_send is False
+
+
+def test_http_provider_rejects_non_https():
+    with pytest.raises(ValueError, match='HTTPS'):
+        HttpJobProvider('http://feed.example/jobs')

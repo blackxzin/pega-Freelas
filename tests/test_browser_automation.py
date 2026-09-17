@@ -4,6 +4,7 @@ from freelahunter.browser_automation import (
     BrowserActionPolicy,
     BrowserAutomationError,
     PremiumFeatureError,
+    PlaywrightPageAdapter,
     ProposalBrowserAutomation,
     ProposalFormSelectors,
 )
@@ -77,3 +78,29 @@ def test_browser_policy_blocks_gold_badge_projects_without_opening_them():
             has_gold_badge=True,
         )
     assert page.events == []
+
+
+def test_playwright_adapter_maps_page_operations():
+    class Locator:
+        def __init__(self, events, selector):
+            self.events, self.selector = events, selector
+
+        def fill(self, value): self.events.append(('fill', self.selector, value))
+        def click(self): self.events.append(('click', self.selector))
+
+    class PlaywrightFake:
+        def __init__(self): self.events = []
+        def goto(self, url, wait_until): self.events.append(('goto', url, wait_until))
+        def locator(self, selector): return Locator(self.events, selector)
+
+    page = PlaywrightFake()
+    adapter = PlaywrightPageAdapter(page)
+    adapter.open('https://example.test/job')
+    adapter.fill('#message', 'teste')
+    adapter.click('#submit')
+
+    assert page.events == [
+        ('goto', 'https://example.test/job', 'domcontentloaded'),
+        ('fill', '#message', 'teste'),
+        ('click', '#submit'),
+    ]

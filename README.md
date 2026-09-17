@@ -14,6 +14,17 @@ npm install
 npm run test:browser
 ```
 
+API opcional:
+
+```bash
+python -m pip install -r requirements-api.txt
+ADMIN_TOKEN='defina-um-token-forte' uvicorn freelahunter.api:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+O provider HTTP (`HttpJobProvider`) aceita apenas feeds JSON via HTTPS e somente
+consulta vagas. Envio continua separado, protegido por `DRY_RUN`, kill switch,
+provider autorizado e aprovação explícita.
+
 Defaults são `DRY_RUN=true`, `AUTO_SEND=false`, `AUTO_SEND_KILL_SWITCH=true`. Somente `AuthorizedMockProvider` declara envio autorizado. Integrações reais devem implementar `JobProvider`/`ProposalSender` sem bypass de CAPTCHA, Cloudflare ou rate limits.
 
 Arquitetura detalhada: `docs/ARCHITECTURE.md`, `docs/AUTOMATION.md`, `docs/SECURITY.md`.
