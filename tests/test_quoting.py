@@ -70,12 +70,19 @@ def test_client_name_personalizes_greeting():
 def test_market_reference_is_advisory_and_does_not_override_calculation():
     settings = json.loads((ROOT / 'config/pricing.json').read_text())
     settings['hourly_rate'] = 30
+    settings.pop('proposal_price_floor', None)
+    settings.pop('proposal_price_ceiling', None)
     result = build_quote({'title': 'Landing page', 'description':
         'Landing page responsiva com layout aprovado, textos, imagens e formulário visual. '
         'Entregar HTML e CSS com aceite em desktop e celular e uma rodada de revisão.'},
         ProfileService().load(), settings)
     assert result['price_range'][1] == result['hours_range'][1] * 30
     assert any('abaixo da referência consultiva' in note for note in result['knowledge']['notes'])
+
+
+def test_configured_proposal_price_band_limits_values():
+    result = quote('Marketplace SaaS com pagamentos', 'Criar plataforma com API, painel, login e pagamento.')
+    assert all(3000 <= price <= 7000 for price in result['price_range'])
 
 
 def test_off_platform_contact_requires_manual_review():

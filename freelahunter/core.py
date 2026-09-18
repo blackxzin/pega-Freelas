@@ -326,7 +326,8 @@ class Database:
             project_type,client_key,conversation_id,price_band
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO UPDATE SET
             subject=excluded.subject, message=excluded.message,
-            validation_status=excluded.validation_status, status=excluded.status,
+            validation_status=excluded.validation_status,
+            status=CASE WHEN proposals.status='SENT' THEN proposals.status ELSE excluded.status END,
             suggested_price=excluded.suggested_price,
             project_type=COALESCE(excluded.project_type, proposals.project_type),
             client_key=COALESCE(excluded.client_key, proposals.client_key),
@@ -427,6 +428,17 @@ class Database:
             return False, state[1] or 'automação pausada'
         if not self.within_limit('send-hour', max_per_hour, 3600): return False, 'limite horário atingido'
         if not self.within_limit('send-day', max_per_day, 86400): return False, 'limite diário atingido'
+        return True, 'ok'
+
+    def client_send_gate(self, client_key, maximum=1, window_seconds=86400):
+        if not client_key:
+            return True, 'cliente sem identificador'
+        cutoff = str(int(time.time() - window_seconds))
+        count = self.conn.execute('''SELECT COUNT(*) FROM proposals
+            WHERE status='SENT' AND client_key IS NOT NULL AND client_key=?
+            AND strftime('%s', sent_at) >= ?''', (client_key, cutoff)).fetchone()[0]
+        if count >= maximum:
+            return False, f'limite por cliente atingido ({count}/{maximum} em 24h)'
         return True, 'ok'
 
     def conversion_report(self):

@@ -45,6 +45,12 @@ def build_quote(snapshot, profile, settings=None):
     for key in ('hourly_rate', 'minimum_price', 'productive_team_hours_per_day'):
         if not math.isfinite(settings[key]) or settings[key] <= 0:
             raise ValueError(f'Invalid {key}')
+    price_floor = settings.get('proposal_price_floor', settings['minimum_price'])
+    price_ceiling = settings.get('proposal_price_ceiling', float('inf'))
+    valid_floor = isinstance(price_floor, (int, float)) and math.isfinite(price_floor) and price_floor > 0
+    valid_ceiling = isinstance(price_ceiling, (int, float)) and price_ceiling > 0 and (math.isfinite(price_ceiling) or math.isinf(price_ceiling))
+    if not valid_floor or not valid_ceiling or price_ceiling < price_floor:
+        raise ValueError('Invalid proposal price band')
     if not 0 <= settings['fee_fraction'] < 1:
         raise ValueError('Invalid fee_fraction')
     for key in ('risk_buffer', 'qa_fraction', 'feedback_business_days'):
@@ -133,8 +139,10 @@ def build_quote(snapshot, profile, settings=None):
         tasks.append(qa)
         low = math.ceil((base_low + qa['hours_min']) * (1 + settings['risk_buffer']))
         high = math.ceil((base_high + qa['hours_max']) * (1 + settings['risk_buffer']))
-    prices = ([math.ceil(max(settings['minimum_price'], h * effective_hourly_rate) / 50) * 50
-               for h in (low, high)] if low is not None else None)
+    raw_prices = ([math.ceil(max(settings['minimum_price'], h * effective_hourly_rate) / 50) * 50
+                   for h in (low, high)] if low is not None else None)
+    prices = ([min(price_ceiling, max(price_floor, price)) for price in raw_prices]
+              if raw_prices else None)
     days = ([math.ceil((math.ceil(h / settings['productive_team_hours_per_day']) +
                        settings['feedback_business_days']) * 7 / 5) for h in (low, high)]
             if low is not None else None)

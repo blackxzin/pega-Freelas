@@ -8,9 +8,10 @@ A base `knowledge/freelance-market-br-2026.json`, fornecida pelo usuário, é
 consultiva. O bot registra alertas quando o valor/hora implícito sai da faixa de
 referência, mas não altera o preço calculado para forçar encaixe nessa faixa.
 
-As premissas estão em `config/pricing.json`: R$ 100 por hora de trabalho,
-mínimo de R$ 500, seis horas produtivas por dia para a equipe inteira, 20% de
-testes, 25% de reserva e dois dias úteis para revisão. Esses números são
+As premissas estão em `config/pricing.json`: R$ 45 por hora de trabalho,
+valor enviado entre R$ 3.000 e R$ 7.000, seis horas produtivas por dia para a
+equipe inteira, 20% de testes, 25% de reserva e dois dias úteis para revisão.
+Esses números são
 premissas internas ajustáveis, não uma média de mercado pesquisada. Não se
 pressupõe que dois desenvolvedores produzam dezesseis horas por dia em paralelo.
 

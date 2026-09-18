@@ -25,6 +25,10 @@ const dryRun = process.env.DRY_RUN !== 'false';
 const killSwitch = process.env.AUTO_SEND_KILL_SWITCH !== 'false';
 const minDelay = Math.max(0, Number(process.env.ACTION_DELAY_MIN_MS || 350));
 const maxDelay = Math.max(minDelay, Number(process.env.ACTION_DELAY_MAX_MS || 1200));
+const runForever = process.env.RUN_FOREVER === 'true';
+const pollSeconds = Math.max(60, Number(process.env.HUNT_POLL_SECONDS || (Number(process.env.HUNT_INTERVAL_MINUTES || 15) * 60)));
+const forceProposal = process.env.AUTO_FORCE_PROPOSAL === 'true';
+const maxProposalsPerClient = Math.max(1, Number(process.env.MAX_PROPOSALS_PER_CLIENT_24H || 1));
 const premium = /premium|projeto exclusivo|bandeira dourada|selo dourado|assinar|assinatura|turbinar/i;
 
 function generate(snapshot) {
@@ -55,6 +59,30 @@ function markSent(proposalId, externalId, conversationId) {
 function conversationIdFromUrl(value) {
   const match = String(value || '').match(/\/messages\/(?:inbox\/)?([^/?#]+)/i);
   return match ? match[1] : undefined;
+}
+
+function brl(value) {
+  return `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function forceProposalDraft(draft) {
+  if (!forceProposal || draft.action !== 'question' || !Array.isArray(draft.price_range) || !draft.price_range[1]) return draft;
+  const scope = (draft.breakdown || []).slice(0, 5).map((item) => item.deliverable).join('; ') || 'desenvolvimento, testes e entrega documentada';
+  const days = Array.isArray(draft.days_range) && draft.days_range[1] ? draft.days_range[1] : null;
+  if (!days) return draft;
+  const title = String(draft.subject || '').replace(/^Proposta:\s*/i, '');
+  draft.action = 'proposal';
+  draft.questions = [];
+  draft.suggested_price = draft.price_range[1];
+  draft.estimated_days = days;
+  draft.message = `Olá! Temos interesse no projeto “${title}”. Entendemos que a entrega envolve ${scope}. `
+    + 'Propomos executar em etapas verificáveis, com alinhamento, implementação, testes e entrega documentada. '
+    + `Para esta estimativa preliminar, propomos ${brl(draft.suggested_price)} e prazo de até ${days} dias corridos. `
+    + 'O valor pode ser negociado conforme os detalhes finais do escopo e as prioridades do projeto. '
+    + 'APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.';
+  draft.validation_status = 'PENDING';
+  draft.validation_reasons = ['Estimativa automática preliminar; confirmar escopo com o cliente.'];
+  return draft;
 }
 
 function clientHistory(clientKey) {
@@ -124,7 +152,7 @@ async function fillJob(page, link) {
   snapshot.client_key = snapshot.client_url || snapshot.client;
   snapshot.client_history = clientHistory(snapshot.client_key);
   snapshot.confirmed_context = clientContext(snapshot.client_key);
-  const draft = generate(snapshot);
+  const draft = forceProposalDraft(generate(snapshot));
   if (draft.action === 'skip') return { skipped: draft.reason };
   console.log(JSON.stringify({ tasks: draft.breakdown, price_range: draft.price_range,
     client_total_range: draft.client_total_range, days_range: draft.days_range,
@@ -181,6 +209,9 @@ async function main() {
   if (autoSend && (dryRun || killSwitch)) {
     throw new Error('AUTO mode exige DRY_RUN=false e AUTO_SEND_KILL_SWITCH=false.');
   }
+  console.log(JSON.stringify({ event: 'hunt_started', auto_send: autoSend, dry_run: dryRun,
+    run_forever: runForever, force_proposal: forceProposal, poll_seconds: pollSeconds,
+    max_jobs: maxJobs, max_proposals_per_client_24h: maxProposalsPerClient }));
   let context;
   try {
     context = await chromium.launchPersistentContext(profileDir, {
@@ -189,8 +220,10 @@ async function main() {
       args: ['--disable-blink-features=AutomationControlled'],
     });
     const page = context.pages()[0] || await context.newPage();
+    let firstCycle = true;
+    while (true) {
     await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    if (process.env.AUTO_LOGIN_PROMPT !== 'false' && !autoSend) await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
+    if (firstCycle && process.env.AUTO_LOGIN_PROMPT !== 'false' && !autoSend) await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
     const links = targetJobUrl ? [{ href: targetJobUrl, text: targetJobUrl }] : await (async () => {
       const collected = [];
       for (const selector of selectors.listing.links) {
@@ -211,8 +244,9 @@ async function main() {
     await jobPage.bringToFront();
     await humanPause();
     const result = await fillJob(jobPage, item.href);
+    try {
     if (result.skipped) { console.log(`IGNORADA: ${result.skipped} — ${item.href}`); continue; }
-    if (result.draft.validation_status && result.draft.validation_status !== 'PASSED') {
+    if (result.draft.validation_status && result.draft.validation_status !== 'PASSED' && !forceProposal) {
       console.log(`IGNORADA: proposta não passou validação — ${(result.draft.validation_reasons || []).join('; ')}`);
       continue;
     }
@@ -220,6 +254,14 @@ async function main() {
     console.log(`${result.kind.toUpperCase()} preenchida: ${result.draft.subject || item.href}`);
     console.log(`Valor sugerido: R$ ${result.draft.suggested_price ?? 'a combinar'} | prazo: ${result.draft.estimated_days} dias`);
     console.log(`Texto preparado:\n${result.kind === 'question' ? result.draft.question : result.draft.message}`);
+    const clientGate = tracking('client-gate', {
+      client_key: result.snapshot.client_key,
+      max_per_day: maxProposalsPerClient,
+    });
+    if (!clientGate.allowed) {
+      console.log(`IGNORADA: ${clientGate.reason} — ${item.href}`);
+      continue;
+    }
     const tracked = tracking('register', {
       url: result.snapshot.url, title: result.snapshot.title, subject: result.draft.subject,
       message: result.kind === 'question' ? result.draft.question : result.draft.message,
@@ -227,6 +269,10 @@ async function main() {
       client_key: result.snapshot.client_url || result.snapshot.client,
       validation_status: result.draft.validation_status || 'PENDING',
     });
+    if (tracked.already_sent) {
+      console.log(`IGNORADA: proposta já enviada anteriormente — ${item.href}`);
+      continue;
+    }
     const answer = autoSend ? 'ENVIAR' : await ask('Digite ENVIAR para clicar no envio desta vaga, ou Enter para deixar como rascunho: ');
     if (answer.trim() === 'ENVIAR') {
       const gate = spawnSync('python', ['scripts/proposal_tracking.py', 'gate', '--max-per-hour', process.env.MAX_PROPOSALS_PER_HOUR || '3', '--max-per-day', process.env.MAX_PROPOSALS_PER_DAY || '10', '--no-response-days', process.env.PAUSE_NO_RESPONSE_DAYS || '7', '--consecutive-no-response', process.env.PAUSE_CONSECUTIVE_NO_RESPONSE || '5', '--rejection-threshold', process.env.PAUSE_REJECTION_THRESHOLD || '0.6'], { cwd: root, encoding: 'utf8' });
@@ -265,9 +311,20 @@ async function main() {
       }
       else console.log('Botão de envio não localizado; rascunho preservado.');
     }
+    } catch (error) {
+      console.error(`FALHA na vaga ${item.href}: ${error.message}`);
+    } finally {
+      await jobPage.close().catch(() => {});
     }
-    console.log(`Concluído: ${processed} vaga(s). Chromium permanece aberto para revisão.`);
-    await ask('Pressione Enter para fechar Chromium: ');
+    }
+    console.log(`Ciclo concluído: ${processed} vaga(s). Chromium permanece aberto.`);
+    if (!runForever) {
+      await ask('Pressione Enter para fechar Chromium: ');
+      break;
+    }
+    firstCycle = false;
+    await page.waitForTimeout(pollSeconds * 1000);
+    }
   } finally {
     if (context) await context.close();
     rl.close();

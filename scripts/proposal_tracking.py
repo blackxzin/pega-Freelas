@@ -24,20 +24,27 @@ def register(args):
     payload = json.load(sys.stdin)
     db = database(args)
     key = payload.get('idempotency_key') or sha('|'.join(str(payload.get(k, '')) for k in ('url', 'title', 'message')))
+    existing = db.conn.execute('SELECT status FROM proposals WHERE idempotency_key=?', (key,)).fetchone()
     proposal_id = db.register_proposal(
         payload.get('job_id'), key, payload.get('subject') or f"Proposta: {payload.get('title', '')}",
         payload.get('message', ''), payload.get('price'), payload.get('project_type'),
         payload.get('client_key'), payload.get('conversation_id'), payload.get('validation_status', 'PENDING'),
     )
-    emit({'proposal_id': proposal_id, 'idempotency_key': key})
+    emit({'proposal_id': proposal_id, 'idempotency_key': key, 'already_sent': bool(existing and existing[0] == 'SENT')})
 
 
 def mark_sent(args):
     db = database(args)
-    row = db.conn.execute('SELECT idempotency_key FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
+    row = db.conn.execute('SELECT idempotency_key, status FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
     if not row:
         raise SystemExit(f'proposta não encontrada: {args.proposal_id}')
     db.mark_sent(row[0], args.external_id or f'manual-{args.proposal_id}', args.conversation_id)
+    # The browser bridge is an external sender, so it must consume the same
+    # rolling-window counters used by the native pipeline.  Do this only on
+    # the first transition to SENT to keep retries idempotent.
+    if row[1] != 'SENT':
+        db.consume_limit('send-hour')
+        db.consume_limit('send-day')
     emit({'proposal_id': args.proposal_id, 'status': 'SENT'})
 
 
@@ -74,6 +81,14 @@ def gate(args):
         raise SystemExit(2)
 
 
+def client_gate(args):
+    payload = json.load(sys.stdin)
+    allowed, reason = database(args).client_send_gate(
+        payload.get('client_key'), int(payload.get('max_per_day', 1)), 86400,
+    )
+    emit({'allowed': allowed, 'reason': reason})
+
+
 def pause(args):
     db = database(args)
     db.set_automation_pause(args.action == 'on', args.reason)
@@ -98,6 +113,7 @@ def main():
     p = sub.add_parser('message'); p.add_argument('--conversation-id', required=True); p.add_argument('--proposal-id', type=int); p.add_argument('--job-id', type=int); p.add_argument('--direction', choices=['inbound', 'outbound'], default='inbound'); p.add_argument('--scope-context', action='store_true'); p.add_argument('--text', required=True); p.set_defaults(func=add_message)
     p = sub.add_parser('report'); p.set_defaults(func=report)
     p = sub.add_parser('gate'); p.add_argument('--max-per-hour', type=int, default=3); p.add_argument('--max-per-day', type=int, default=10); p.add_argument('--no-response-days', type=int, default=7); p.add_argument('--consecutive-no-response', type=int, default=5); p.add_argument('--rejection-threshold', type=float, default=.6); p.set_defaults(func=gate)
+    p = sub.add_parser('client-gate'); p.set_defaults(func=client_gate)
     p = sub.add_parser('pause'); p.add_argument('action', choices=['on', 'off']); p.add_argument('--reason'); p.set_defaults(func=pause)
     p = sub.add_parser('history'); p.add_argument('--client-key', required=True); p.set_defaults(func=history)
     p = sub.add_parser('context'); p.add_argument('--client-key'); p.add_argument('--conversation-id'); p.add_argument('--limit', type=int, default=20); p.set_defaults(func=context)

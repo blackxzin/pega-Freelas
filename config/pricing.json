@@ -1,6 +1,8 @@
 {
-  "hourly_rate": 100,
+  "hourly_rate": 45,
   "minimum_price": 500,
+  "proposal_price_floor": 3000,
+  "proposal_price_ceiling": 7000,
   "productive_team_hours_per_day": 6,
   "risk_buffer": 0.25,
   "qa_fraction": 0.2,
