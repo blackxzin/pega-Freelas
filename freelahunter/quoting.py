@@ -50,9 +50,46 @@ def build_quote(snapshot, profile, settings=None):
     for key in ('risk_buffer', 'qa_fraction', 'feedback_business_days'):
         if not math.isfinite(settings[key]) or settings[key] < 0:
             raise ValueError(f'Invalid {key}')
+    adjustments = settings.get('adjustments', {})
+    defaults = {
+        'complexity_per_integration': 0.0, 'complexity_per_screen': 0.0,
+        'urgent_deadline_days': 0, 'urgent_multiplier': 0.0,
+        'recurring_client_multiplier': 0.0, 'good_history_multiplier': 0.0,
+        'min_multiplier': 1.0, 'max_multiplier': 1.0,
+    }
+    adjustments = {key: adjustments.get(key, value) for key, value in defaults.items()}
+    for key, value in adjustments.items():
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f'Invalid adjustments.{key}')
+    if adjustments['min_multiplier'] <= 0 or adjustments['max_multiplier'] < adjustments['min_multiplier']:
+        raise ValueError('Invalid adjustment multiplier bounds')
     title = ' '.join(str(snapshot.get('title', '')).split())[:200]
     description = str(snapshot.get('description', ''))
+    confirmed_context = [str(item).strip() for item in snapshot.get('confirmed_context', []) if str(item).strip()]
+    if confirmed_context:
+        description += '\nRestrições confirmadas pelo cliente:\n' + '\n'.join(confirmed_context[-20:])
     text = normalized(title + ' ' + description)
+    integration_count = snapshot.get('integrations_count')
+    if not isinstance(integration_count, (int, float)):
+        integration_count = len(re.findall(r'integrac|webhook|conexao com|terceiro', text))
+    screen_count = snapshot.get('screens_count')
+    if not isinstance(screen_count, (int, float)):
+        quantities = re.findall(r'\b(\d+)\s+(?:telas|paginas|landing pages|endpoints)\b', text)
+        screen_count = sum(int(value) for value in quantities)
+        if screen_count == 0:
+            screen_count = len(re.findall(r'\b(?:tela|pagina|dashboard|painel)\b', text))
+    factor = 1.0 + float(integration_count) * adjustments['complexity_per_integration']
+    factor += float(screen_count) * adjustments['complexity_per_screen']
+    deadline = snapshot.get('deadline_days')
+    if isinstance(deadline, (int, float)) and adjustments['urgent_deadline_days'] > 0 and deadline <= adjustments['urgent_deadline_days']:
+        factor += adjustments['urgent_multiplier']
+    history = snapshot.get('client_history') or {}
+    if history.get('recurring'):
+        factor += adjustments['recurring_client_multiplier']
+    if history.get('good_history'):
+        factor += adjustments['good_history_multiplier']
+    factor = min(adjustments['max_multiplier'], max(adjustments['min_multiplier'], factor))
+    effective_hourly_rate = settings['hourly_rate'] * factor
     tasks = [dict(deliverable=name, hours_min=low, hours_max=high)
              for name, pattern, low, high in RULES if re.search(pattern, text)]
     questions = []
@@ -96,7 +133,7 @@ def build_quote(snapshot, profile, settings=None):
         tasks.append(qa)
         low = math.ceil((base_low + qa['hours_min']) * (1 + settings['risk_buffer']))
         high = math.ceil((base_high + qa['hours_max']) * (1 + settings['risk_buffer']))
-    prices = ([math.ceil(max(settings['minimum_price'], h * settings['hourly_rate']) / 50) * 50
+    prices = ([math.ceil(max(settings['minimum_price'], h * effective_hourly_rate) / 50) * 50
                for h in (low, high)] if low is not None else None)
     days = ([math.ceil((math.ceil(h / settings['productive_team_hours_per_day']) +
                        settings['feedback_business_days']) * 7 / 5) for h in (low, high)]
@@ -139,4 +176,9 @@ def build_quote(snapshot, profile, settings=None):
                 estimated_hours=high, hours_range=[low, high], price_range=prices,
                 client_total_range=totals, days_range=days, questions=questions, breakdown=tasks,
                 assumptions=settings, knowledge=advisory,
-                estimate_type='preliminar por regras; referências de mercado são apenas sanity check')
+                estimate_type='preliminar por regras; referências de mercado são apenas sanity check',
+                pricing_factors={
+                    'integration_count': int(integration_count), 'screen_count': int(screen_count),
+                    'multiplier': round(factor, 4), 'effective_hourly_rate': round(effective_hourly_rate, 2),
+                    'client_history': history, 'confirmed_context_count': len(confirmed_context),
+                })

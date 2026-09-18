@@ -67,6 +67,55 @@ def test_pipeline_applies_profile_job_rules():
     assert stats['proposals'] == 1
 
 
+def test_filter_matches_whole_keywords_and_accents():
+    service = FilterService(included_keywords=['API'], excluded_keywords=['Premium'])
+    assert service.accepts(Job('Capital de giro', 'Sistema web', external_id='capital')) is False
+    assert service.accepts(Job('API pública', 'Integração com automação', external_id='api')) is True
+    assert service.accepts(Job('API premiumizada', 'API REST', external_id='premiumized')) is True
+
+
+def test_analysis_uses_skills_found_in_description_when_feed_omits_skills():
+    analyzed = AIService().analyze(
+        Job('API FastAPI', 'Criar API com Python, FastAPI e SQL.', external_id='text-only'),
+        ProfileService().load(), [],
+    )
+    assert {'python', 'fastapi'} <= set(analyzed.matched_skills)
+    assert analyzed.score > 50
+
+
+def test_database_migration_preserves_proposals_and_tracks_outcome(tmp_path):
+    db = Database(str(tmp_path / 'tracking.db'))
+    proposal_id = db.register_proposal(None, 'key-1', 'Proposta', 'mensagem', 1200, 'API', 'client-1')
+    db.mark_sent('key-1', 'external-1', '42')
+    db.record_message('42', 'Confirmo duas telas.', is_scope_context=True)
+    db.set_proposal_outcome(proposal_id, 'accepted')
+    row = db.conn.execute('SELECT outcome_status,conversation_id,price_band FROM proposals WHERE id=?', (proposal_id,)).fetchone()
+    assert row == ('accepted', '42', 'R$ 1.000–2.499')
+    assert db.conn.execute('SELECT COUNT(*) FROM conversation_messages').fetchone()[0] == 1
+    assert db.conn.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+
+
+def test_dynamic_quote_uses_complexity_urgency_and_history():
+    from freelahunter.quoting import build_quote
+    profile = ProfileService().load()
+    base = build_quote({'title': 'API', 'description': 'Criar API simples.'}, profile)
+    adjusted = build_quote({'title': 'API', 'description': 'Criar API com quatro integrações e seis telas.',
+                            'integrations_count': 4, 'screens_count': 6, 'deadline_days': 2,
+                            'client_history': {'recurring': True, 'good_history': True}}, profile)
+    assert adjusted['pricing_factors']['multiplier'] > 1
+    assert adjusted['price_range'][1] > base['price_range'][1]
+
+
+def test_pause_circuit_blocks_after_rejections(tmp_path):
+    db = Database(str(tmp_path / 'pause.db'))
+    for number in range(2):
+        proposal_id = db.register_proposal(None, f'key-{number}', 'Proposta', 'mensagem', 1000, 'API', 'client')
+        db.mark_sent(f'key-{number}', f'ext-{number}')
+        db.set_proposal_outcome(proposal_id, 'rejected')
+    assert db.get_automation_state()[0] == 1
+    assert db.send_gate()[0] is False
+
+
 def test_runtime_control_kill_switch_blocks_authorized_send():
     control = RuntimeControl(False)
     control.set_kill_switch(True)

@@ -5,5 +5,15 @@
   "risk_buffer": 0.25,
   "qa_fraction": 0.2,
   "feedback_business_days": 2,
-  "fee_fraction": 0.2
+  "fee_fraction": 0.2,
+  "adjustments": {
+    "complexity_per_integration": 0.04,
+    "complexity_per_screen": 0.02,
+    "urgent_deadline_days": 3,
+    "urgent_multiplier": 0.15,
+    "recurring_client_multiplier": -0.05,
+    "good_history_multiplier": -0.03,
+    "min_multiplier": 0.85,
+    "max_multiplier": 1.5
+  }
 }

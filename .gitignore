@@ -8,3 +8,5 @@ node_modules/
 test-results/
 playwright-report/
 browser-profile/
+state/
+reports/

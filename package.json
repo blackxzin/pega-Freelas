@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "scripts": {
     "test:browser": "playwright test",
-    "hunt:chrome": "node scripts/interactive_hunt.mjs"
+    "hunt:chrome": "node scripts/interactive_hunt.mjs",
+    "monitor:inbox": "node scripts/monitor_inbox.mjs",
+    "smoke:selectors": "node scripts/smoke_selectors.mjs",
+    "test:live": "node scripts/live_readonly_test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0"

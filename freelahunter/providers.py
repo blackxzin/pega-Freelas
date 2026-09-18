@@ -48,7 +48,8 @@ class HttpJobProvider:
     def _job_fields(row: dict) -> dict:
         if not isinstance(row, dict) or not row.get('title') or not row.get('description'):
             raise ValueError('each job must include title and description')
-        allowed = {'title', 'description', 'external_id', 'url', 'budget_min', 'budget_max', 'currency', 'skills', 'category', 'client', 'published_at'}
+        allowed = {'title', 'description', 'external_id', 'url', 'budget_min', 'budget_max', 'currency',
+                   'skills', 'category', 'client', 'published_at', 'deadline_days', 'client_key', 'client_history'}
         return {key: row[key] for key in allowed if key in row}
 
 
