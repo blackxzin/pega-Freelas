@@ -20,9 +20,33 @@ Caça assistida no Chromium (login manual):
 MAX_JOBS=5 node scripts/interactive_hunt.mjs
 ```
 
-O navegador abre, aguarda login manual, ignora Premium/bandeira dourada, lê a
-vaga, preenche proposta ou pergunta, calcula valor/prazo e pede `ENVIAR` antes
-do clique final. `BROWSER_PROFILE_DIR` pode apontar para um perfil separado.
+O navegador abre, usa uma sessão autenticada salva, ignora Premium/bandeira
+dourada, lê a vaga, preenche proposta ou pergunta e calcula valor/prazo.
+No modo `SEMI_AUTO`, pede `ENVIAR`; no modo `AUTO`, envia somente após todas as
+travas configuráveis passarem. `BROWSER_PROFILE_DIR` pode apontar para um perfil
+separado.
+
+Monitor de respostas no Discord (sem responder clientes automaticamente):
+
+```bash
+npm run monitor:inbox
+npm run smoke:selectors
+python scripts/proposal_tracking.py report
+python scripts/dashboard.py
+```
+
+Defina `DISCORD_WEBHOOK_URL` em `.env`. `INBOX_POLL_SECONDS` controla o intervalo
+(mínimo de 20 segundos). O monitor usa a sessão manual do Chromium, alerta
+somente conversa não lida do cliente e inclui link para responder dentro do
+99Freelas. Falhas temporárias do Discord são repetidas com backoff; falhas de
+leitura não encerram o monitor. O estado local impede alertas duplicados após
+reiniciar.
+
+Automação total (opt-in explícito): `AUTOMATION_MODE=AUTO`, `AUTO_SEND=true` e
+`DRY_RUN=false`, com `AUTO_SEND_KILL_SWITCH=false`. Mesmo nesse modo continuam
+valendo validação da proposta, limites por hora/dia, idempotência e circuito de
+pausa. O smoke test é somente leitura; use `SMOKE_JOB_URL` para validar também
+os campos da página de uma vaga.
 
 API opcional:
 

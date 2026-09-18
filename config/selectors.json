@@ -1,0 +1,40 @@
+{
+  "listing": {
+    "links": ["a[href*='fs=t']", "a[href*='/project/']"]
+  },
+  "job": {
+    "title": [".box-project-view-container-title .nomeProjeto", "h1[itemprop='name']", "h1"],
+    "description": ["[itemprop='description']", "#project-description", ".project-description", ".project-details .description"],
+    "premium_badge": [".box-project-view-principal > .flags img[alt*='Projeto exclusivo']", ".box-project-view-principal > .flags img[src*='project_exclusive']", "[data-project-premium='true']"],
+    "budget": ["[data-budget-max]", "[itemprop='price']", ".box-project-view-info"],
+    "deadline": ["[data-deadline-days]", ".box-project-view-info"],
+    "client": [".info-usuario.cliente .info-usuario-nome .name", "[itemprop='author']"],
+    "client_link": [".info-usuario.cliente a[href*='/users/']", "a[href*='/user/']"]
+  },
+  "proposal": {
+    "question_link": ["a[href*='/project/message/']"],
+    "bid_link": ["a[href*='/project/bid/']"],
+    "message": ["#proposta", "textarea[name*='proposta']", "textarea#message"],
+    "subject": ["#assunto", "#subject", "input[name*='assunto']"],
+    "price": ["#oferta", "input[name*='oferta']"],
+    "final_price": ["#oferta-final", "input[name*='oferta-final']"],
+    "duration": ["#duracao-estimada", "input[name*='duracao']"],
+    "question": ["#mensagem-pergunta", "textarea[name*='pergunta']"],
+    "submit_question": ["#btnEnviarPergunta", "button:has-text('Enviar mensagem')", "button:has-text('Enviar pergunta')"],
+    "submit_proposal": ["#enviar-proposta", "#btnConcluirEnvioProposta", "button:has-text('Enviar proposta')"],
+    "confirmations": ["#confirmar-envio-proposta", "#confirmar-padrao-suspeito-mensagem"],
+    "continue_modal": [".modal:visible .btn-acao.continue"]
+  },
+  "conversation": {
+    "link": ["a[href*='/messages/']:has-text('Ver conversa')"],
+    "message": [".message-text", ".conversation-message", "[data-message-text]"]
+  },
+  "inbox": {
+    "row": ["li.conversa-item:not(.model)", "[data-conversation-id]"],
+    "timestamp": [".dh-envio"],
+    "project": [".project-name"],
+    "client": [".pessoa-name"],
+    "preview": [".item-description .text"],
+    "sent": [".item-description.sent", ".item-description .icon-sent"]
+  }
+}

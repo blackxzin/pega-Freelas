@@ -23,6 +23,12 @@ impostos e despesas. A simulação de oferta final divide esse valor por
 `1 - fee_fraction`. O padrão de 20% é configurável: sempre confira a oferta final
 calculada no site. A taxa não é mencionada na proposta ao cliente.
 
+O valor final pode aplicar fatores determinísticos configuráveis para quantidade
+de integrações, quantidade de telas, urgência e histórico do cliente. O fator é
+limitado por `min_multiplier`/`max_multiplier`; quando o histórico é desconhecido,
+o multiplicador permanece neutro. A prioridade e o filtro de vagas não usam esse
+ajuste.
+
 Referências oficiais consultadas em 17/09/2026:
 - https://www.99freelas.com.br/como-funciona
 - https://99freelas.zendesk.com/hc/pt-br/articles/1500007214242-Como-enviar-propostas
@@ -31,8 +37,9 @@ Escopo curto, desconhecido, amplo, legado, integrações, especialidades não
 confirmadas, exclusões e quantidades relevantes geram perguntas. O orçamento
 anunciado nunca reduz automaticamente a estimativa; negocia-se o escopo.
 Faixas internas continuam disponíveis, mas preço/prazo de envio ficam vazios
-até esclarecimento. Respostas do cliente ainda precisam ser incorporadas
-manualmente ao escopo e avaliadas novamente.
+até esclarecimento. Respostas capturadas pelo monitor entram como contexto
+confirmado na próxima geração; a proposta continua sujeita às travas e ao
+modo de envio configurado.
 
 O navegador deve localizar uma descrição isolada do anúncio. Se os seletores
 não corresponderem ao site, ele informa o problema e não usa o texto completo
