@@ -99,6 +99,14 @@ def client_gate(args):
     emit({'allowed': allowed, 'reason': reason})
 
 
+def message_gate(args):
+    payload = json.load(sys.stdin)
+    allowed, reason = database(args).client_message_gate(
+        payload.get('client_key'), int(payload.get('max_per_day', 1)), 86400,
+    )
+    emit({'allowed': allowed, 'reason': reason})
+
+
 def pause(args):
     db = database(args)
     db.set_automation_pause(args.action == 'on', args.reason)
@@ -125,6 +133,7 @@ def main():
     p = sub.add_parser('report'); p.set_defaults(func=report)
     p = sub.add_parser('gate'); p.add_argument('--max-per-hour', type=int, default=3); p.add_argument('--max-per-day', type=int, default=10); p.add_argument('--no-response-days', type=int, default=7); p.add_argument('--consecutive-no-response', type=int, default=5); p.add_argument('--rejection-threshold', type=float, default=.6); p.set_defaults(func=gate)
     p = sub.add_parser('client-gate'); p.set_defaults(func=client_gate)
+    p = sub.add_parser('message-gate'); p.set_defaults(func=message_gate)
     p = sub.add_parser('pause'); p.add_argument('action', choices=['on', 'off']); p.add_argument('--reason'); p.set_defaults(func=pause)
     p = sub.add_parser('history'); p.add_argument('--client-key', required=True); p.set_defaults(func=history)
     p = sub.add_parser('context'); p.add_argument('--client-key'); p.add_argument('--conversation-id'); p.add_argument('--limit', type=int, default=20); p.set_defaults(func=context)

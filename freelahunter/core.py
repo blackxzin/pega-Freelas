@@ -491,6 +491,19 @@ class Database:
             return False, f'limite por cliente atingido ({count}/{maximum} em 24h)'
         return True, 'ok'
 
+    def client_message_gate(self, client_key, maximum=1, window_seconds=86400):
+        """Keep automatic fallback messages to one per client per window."""
+        if not client_key:
+            return True, 'cliente sem identificador'
+        cutoff = str(int(time.time() - window_seconds))
+        count = self.conn.execute('''SELECT COUNT(*) FROM proposals
+            WHERE status IN ('SENT', 'SENDING') AND suggested_price IS NULL
+            AND client_key IS NOT NULL AND client_key=?
+            AND (status='SENDING' OR strftime('%s', sent_at) >= ?)''', (client_key, cutoff)).fetchone()[0]
+        if count >= maximum:
+            return False, f'limite de mensagens por cliente atingido ({count}/{maximum} em 24h)'
+        return True, 'ok'
+
     def conversion_report(self):
         summary = self.conn.execute('''SELECT COUNT(*),
             SUM(outcome_status IN ('responded','accepted','rejected')), SUM(outcome_status='accepted'),

@@ -124,6 +124,17 @@ def test_client_gate_blocks_repeat_within_24_hours(tmp_path):
     assert db.client_send_gate('client-2') == (True, 'ok')
 
 
+def test_message_gate_counts_only_fallback_messages(tmp_path):
+    db = Database(str(tmp_path / 'message-limit.db'))
+    db.register_proposal(None, 'proposal-key', 'Proposta', 'mensagem', 1000, 'API', 'client-1')
+    db.mark_sent('proposal-key', 'external-proposal')
+    assert db.client_message_gate('client-1') == (True, 'ok')
+
+    db.register_proposal(None, 'message-key', 'Pergunta', 'mensagem', None, 'API', 'client-1')
+    db.mark_sent('message-key', 'external-message')
+    assert db.client_message_gate('client-1') == (False, 'limite de mensagens por cliente atingido (1/1 em 24h)')
+
+
 def test_reregister_sent_proposal_stays_sent(tmp_path):
     db = Database(str(tmp_path / 'idempotency.db'))
     proposal_id = db.register_proposal(None, 'same-key', 'Proposta', 'primeira', 1000, 'API', 'client-1')

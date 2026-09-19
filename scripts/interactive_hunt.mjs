@@ -29,6 +29,7 @@ const runForever = process.env.RUN_FOREVER === 'true';
 const pollSeconds = Math.max(60, Number(process.env.HUNT_POLL_SECONDS || (Number(process.env.HUNT_INTERVAL_MINUTES || 15) * 60)));
 const forceProposal = process.env.AUTO_FORCE_PROPOSAL === 'true';
 const maxProposalsPerClient = Math.max(1, Number(process.env.MAX_PROPOSALS_PER_CLIENT_24H || 1));
+const maxMessagesPerClient = Math.max(1, Number(process.env.MAX_MESSAGES_PER_CLIENT_24H || 1));
 const maxIdleCycles = Math.max(0, Number(process.env.STOP_AFTER_IDLE_CYCLES || 0));
 const premium = /premium|projeto exclusivo|bandeira dourada|selo dourado|assinar|assinatura|turbinar/i;
 
@@ -91,6 +92,14 @@ function clientHistory(clientKey) {
   if (!clientKey) return {};
   const result = spawnSync('python', ['scripts/proposal_tracking.py', 'history', '--client-key', clientKey], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) return {};
+  return JSON.parse(result.stdout.trim().split('\n').pop());
+}
+
+function messageGate(clientKey) {
+  const result = spawnSync('python', ['scripts/proposal_tracking.py', 'message-gate'], {
+    cwd: root, input: JSON.stringify({ client_key: clientKey, max_per_day: maxMessagesPerClient }), encoding: 'utf8',
+  });
+  if (result.status !== 0) return { allowed: false, reason: result.stderr || 'falha na trava de mensagens' };
   return JSON.parse(result.stdout.trim().split('\n').pop());
 }
 
@@ -278,9 +287,11 @@ async function main() {
     });
     const messageOnClientLimit = process.env.AUTO_MESSAGE_ON_LIMIT === 'true'
       && result.kind === 'question' && !clientGate.allowed;
+    const messageGateResult = messageOnClientLimit ? messageGate(result.snapshot.client_key) : { allowed: true };
     if (!clientGate.allowed) {
-      if (!messageOnClientLimit) {
-        console.log(`IGNORADA: ${clientGate.reason} — ${item.href}`);
+      if (!messageOnClientLimit || !messageGateResult.allowed) {
+        const reason = messageOnClientLimit ? messageGateResult.reason : clientGate.reason;
+        console.log(`IGNORADA: ${reason} — ${item.href}`);
         continue;
       }
       console.log(`LIMITE DE PROPOSTAS: tentando enviar mensagem ao cliente — ${item.href}`);
