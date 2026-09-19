@@ -124,6 +124,17 @@ def test_client_gate_blocks_repeat_within_24_hours(tmp_path):
     assert db.client_send_gate('client-2') == (True, 'ok')
 
 
+def test_message_gate_counts_only_fallback_messages(tmp_path):
+    db = Database(str(tmp_path / 'message-limit.db'))
+    db.register_proposal(None, 'proposal-key', 'Proposta', 'mensagem', 1000, 'API', 'client-1')
+    db.mark_sent('proposal-key', 'external-proposal')
+    assert db.client_message_gate('client-1') == (True, 'ok')
+
+    db.register_proposal(None, 'message-key', 'Pergunta', 'mensagem', None, 'API', 'client-1')
+    db.mark_sent('message-key', 'external-message')
+    assert db.client_message_gate('client-1') == (False, 'limite de mensagens por cliente atingido (1/1 em 24h)')
+
+
 def test_reregister_sent_proposal_stays_sent(tmp_path):
     db = Database(str(tmp_path / 'idempotency.db'))
     proposal_id = db.register_proposal(None, 'same-key', 'Proposta', 'primeira', 1000, 'API', 'client-1')
@@ -131,6 +142,21 @@ def test_reregister_sent_proposal_stays_sent(tmp_path):
     db.register_proposal(None, 'same-key', 'Proposta', 'tentativa repetida', 900, 'API', 'client-1')
     row = db.conn.execute('SELECT id,status,suggested_price FROM proposals WHERE id=?', (proposal_id,)).fetchone()
     assert row == (proposal_id, 'SENT', 900)
+
+
+def test_send_claim_is_atomic_and_idempotent(tmp_path):
+    db = Database(str(tmp_path / 'claim.db'))
+    db.register_proposal(None, 'claim-key', 'Proposta', 'mensagem', 1000, 'API', 'client-1')
+
+    assert db.claim_send('claim-key') is True
+    assert db.claim_send('claim-key') is False
+    assert db.client_send_gate('client-1') == (False, 'limite por cliente atingido (1/1 em 24h)')
+
+    assert db.mark_sent('claim-key', 'external-1') is True
+    assert db.mark_sent('claim-key', 'external-2') is False
+    assert db.conn.execute(
+        'SELECT status,sent_external_id FROM proposals WHERE idempotency_key=?', ('claim-key',)
+    ).fetchone() == ('SENT', 'external-1')
 
 
 def test_runtime_control_kill_switch_blocks_authorized_send():
