@@ -1,9 +1,49 @@
 name: FreelaHunter User
-headline: Desenvolvedor Full Stack | Python, APIs e Automação
-bio: Equipe de dois desenvolvedores full stack focada em sistemas web, APIs, automação e integrações.
-skills: [Python, Java, JavaScript, TypeScript, HTML, CSS, React, Next.js, FastAPI, APIs REST, SQL, PostgreSQL, Docker, Linux, Git, GitHub, Automação, Integrações, n8n]
-experience: []
+headline: Full-Stack Developer | Python, FastAPI, APIs & Automation
+bio: >-
+  We are a two-developer full-stack team focused on building practical web
+  systems, REST APIs, workflow automations and third-party integrations. We
+  work across backend and frontend delivery, from scope clarification and
+  implementation to testing, documentation and handoff. Our core stack
+  includes Python, FastAPI, JavaScript/TypeScript, React/Next.js, SQL,
+  PostgreSQL, Docker, Linux and Git. We prefer clear milestones, verifiable
+  deliverables and communication inside the platform. Hosting, domains,
+  managed databases, API credits and other paid services remain in the
+  client's own accounts.
+skills: [Python, FastAPI, REST APIs, JavaScript, TypeScript, React, Next.js, HTML, CSS, SQL, PostgreSQL, Docker, Linux, Git, GitHub, Automation, Integrations, n8n]
+experience:
+  - title: Independent Full-Stack Software Project
+    company: FreelaHunter
+    description: >-
+      Designed and implemented a browser-assisted freelance workflow with
+      scope-based quoting, proposal generation, validation, SQLite tracking,
+      duplicate-send protection, rate limits and a pause circuit.
+    technologies: [Python, JavaScript, Playwright, SQLite, FastAPI, Docker, Git]
 education: ""
+portfolio:
+  - title: FreelaHunter — Freelance workflow automation
+    role: Full-Stack Developer
+    description: >-
+      A practical platform for discovering suitable freelance projects,
+      isolating project descriptions, estimating scope-based quotes, preparing
+      proposals and tracking conversations. The workflow keeps human review,
+      validation and platform-safe sending controls in the loop.
+    technologies: [Python, JavaScript, Playwright, SQLite, FastAPI, Docker]
+  - title: Scope-based quote and proposal engine
+    role: Backend and workflow developer
+    description: >-
+      Deterministic quote generation based on deliverables, integrations,
+      screens, risk buffer, QA effort, deadlines and client context. It creates
+      either a qualified question or a proposal with explicit assumptions,
+      negotiation language and paid-service boundaries.
+    technologies: [Python, FastAPI, SQL, REST APIs, Automation]
+  - title: Browser automation safety layer
+    role: Automation and QA developer
+    description: >-
+      Browser workflow with persistent sessions, selector checks, manual login,
+      idempotency keys, atomic send reservations, per-client limits, dry-run
+      defaults and confirmation checks after a submission attempt.
+    technologies: [JavaScript, Playwright, SQLite, Testing, Git]
 team_description: equipe de dois desenvolvedores full stack
 client_pays_paid_services: true
 preferred_jobs: [Python, FastAPI, API, automação, integração, backend, frontend, sistema web, SaaS, n8n, landing page, site]

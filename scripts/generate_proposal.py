@@ -10,8 +10,10 @@ from freelahunter.quoting import build_quote
 
 
 def main() -> None:
-    profile_path = Path(__file__).resolve().parents[1] / 'config/profile.yaml'
     snapshot = json.load(sys.stdin)
+    root = Path(__file__).resolve().parents[1]
+    platform = str(snapshot.get('platform') or '').lower()
+    profile_path = root / ('config/upwork_profile.yaml' if platform == 'upwork' else 'config/profile.yaml')
     profile = ProfileService(str(profile_path)).load()
     result = build_quote(snapshot, profile)
     if result.get('action') == 'proposal':

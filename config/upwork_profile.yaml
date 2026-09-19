@@ -1,0 +1,59 @@
+platform: upwork
+profile_url: https://www.upwork.com/freelancers/~0173a99e2479ab2b2e
+locale: en-US
+currency: USD
+pricing_path: config/upwork_pricing.json
+knowledge_path: knowledge/team-devs-senior-full-stack.md
+team_description: two-developer full-stack team
+
+# Reviewable copy for manual entry in the Upwork account.
+# This is not proof of client work and does not authorize auto-saving changes.
+title: Full-Stack Developer | Python, FastAPI, React & Automation
+overview: >-
+  We are a two-developer full-stack team building practical web systems, REST
+  APIs, workflow automations and third-party integrations. We work as a pair,
+  not a large agency: frontend and backend can move in parallel, every change
+  gets cross-reviewed, and the project has continuity when one partner is
+  temporarily unavailable.
+
+  Our verified stack includes Python, FastAPI, JavaScript/TypeScript, React,
+  Next.js, SQL, PostgreSQL, Docker, Linux and Git. We can help with API
+  development, dashboards, authentication and permissions, integrations,
+  workflow automation, data persistence, bug fixes and carefully scoped MVPs.
+
+  We work through clear milestones and verifiable deliverables. We confirm
+  inputs, outputs, acceptance criteria, access requirements and what is outside
+  the first stage before implementation. Our delivery includes testing,
+  documentation and a practical handoff. Paid APIs, hosting, domains and
+  managed services remain in the client's own accounts.
+
+  Share the job scope, expected users, integrations and success criteria. We
+  will help define a realistic first milestone and refine the estimate after
+  the details are confirmed.
+skills: [Python, FastAPI, REST APIs, JavaScript, TypeScript, React, Next.js, SQL, PostgreSQL, Docker, Git, Automation, API Integration, Web Development, Backend Development]
+languages:
+  - name: English
+    level: Professional working proficiency
+  - name: Portuguese
+    level: Native or Bilingual
+portfolio:
+  - title: FreelaHunter — Freelance workflow automation
+    description: >-
+      Designed and implemented a workflow for discovering suitable freelance
+      projects, isolating descriptions, preparing scope-based proposals and
+      tracking follow-up conversations. Includes validation, duplicate-send
+      protection, rate limits, dry-run defaults and manual approval controls.
+    skills: [Python, JavaScript, Playwright, SQLite, FastAPI, Automation]
+  - title: Scope-based quote and proposal engine
+    description: >-
+      Built a deterministic estimation flow that decomposes work into
+      deliverables, adds QA and risk buffers, accounts for integrations and
+      deadlines, and generates either a qualified question or a proposal with
+      explicit assumptions and negotiation language.
+    skills: [Python, REST APIs, SQL, Automation, Backend Development]
+  - title: Browser automation safety layer
+    description: >-
+      Implemented persistent browser sessions, selector smoke checks, atomic
+      send reservations, idempotency keys, per-client limits and confirmation
+      checks so a failed or uncertain external action is not retried blindly.
+    skills: [JavaScript, Playwright, SQLite, Testing]

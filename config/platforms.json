@@ -1,0 +1,24 @@
+{
+  "99freelas": {
+    "hostnames": ["99freelas.com.br", "www.99freelas.com.br"],
+    "listing_url": "https://www.99freelas.com.br/projects?categoria=web-mobile-e-software&page=4",
+    "inbox_url": "https://www.99freelas.com.br/messages/inbox",
+    "allow_submission": true,
+    "locale": "pt-BR",
+    "currency": "BRL",
+    "profile_path": "config/profile.yaml",
+    "pricing_path": "config/pricing.json",
+    "job_link_pattern": "/project/[^/?#]+-\\d+"
+  },
+  "upwork": {
+    "hostnames": ["upwork.com", "www.upwork.com"],
+    "listing_url": "https://www.upwork.com/nx/find-work/",
+    "inbox_url": "https://www.upwork.com/ab/messages/rooms",
+    "allow_submission": false,
+    "locale": "en-US",
+    "currency": "USD",
+    "profile_path": "config/upwork_profile.yaml",
+    "pricing_path": "config/upwork_pricing.json",
+    "job_link_pattern": "/jobs/"
+  }
+}

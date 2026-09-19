@@ -53,3 +53,8 @@ validação, preço inicial com possibilidade explícita de negociação e custo
 externos na conta do cliente. Não apresentam experiência inventada, graduação,
 links ou dados de contato. Os exemplos dos primeiros envios são contexto
 comercial, não contratos concluídos nem evidência de produtividade real.
+
+No Upwork, `config/upwork_pricing.json` mantém premissas separadas em USD e
+faixas opcionais para EUR, GBP e BRL. A moeda é detectada no snapshot da vaga;
+isso muda a unidade e a faixa configurada, mas não faz conversão cambial em
+tempo real. Atualize essas premissas manualmente quando necessário.

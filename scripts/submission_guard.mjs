@@ -12,7 +12,9 @@ export function hasPriorProjectIntroduction(messages, projectTitle) {
   return messages.some((message) => {
     const text = normalizeMessage(message);
     const presentsTeam = text.includes('dois desenvolvedores full stack') ||
-      text.includes('equipe de dois desenvolvedores full stack');
+      text.includes('equipe de dois desenvolvedores full stack') ||
+      text.includes('two-developer full-stack team') ||
+      text.includes('two full-stack developers');
     return presentsTeam && (!title || text.includes(title));
   });
 }

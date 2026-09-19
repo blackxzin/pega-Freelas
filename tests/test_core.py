@@ -1,4 +1,5 @@
 import json
+import threading
 from io import BytesIO
 
 import pytest
@@ -104,6 +105,50 @@ def test_dynamic_quote_uses_complexity_urgency_and_history():
                             'client_history': {'recurring': True, 'good_history': True}}, profile)
     assert adjusted['pricing_factors']['multiplier'] > 1
     assert adjusted['price_range'][1] > base['price_range'][1]
+
+
+def test_fallback_message_has_team_price_and_negotiation_language():
+    from freelahunter.quoting import build_quote
+    draft = build_quote({
+        'title': 'API de pedidos',
+        'description': 'Criar API REST com Python, autenticação e integração com gateway de pagamento.',
+    }, ProfileService().load())
+    assert draft['fallback_price'] is not None
+    assert 'equipe de dois desenvolvedores full stack' in draft['fallback_message']
+    assert 'preço pode ser negociado' in draft['fallback_message']
+    assert 'R$ ' in draft['fallback_message']
+
+
+def test_client_identity_is_normalized_for_duplicate_protection(tmp_path):
+    db = Database(str(tmp_path / 'normalized-client.db'))
+    db.register_proposal(None, 'client-url-key', 'Proposta', 'mensagem', 1000, 'API',
+                         'https://www.example.test/users/42/?ref=profile')
+    db.mark_sent('client-url-key', 'external-1')
+    assert db.client_send_gate('https://WWW.EXAMPLE.TEST/users/42') == (
+        False, 'limite por cliente atingido (1/1 em 24h)'
+    )
+
+
+def test_concurrent_workers_cannot_reserve_two_clients(tmp_path):
+    path = str(tmp_path / 'client-claim.db')
+    first = Database(path)
+    second = Database(path)
+    first.register_proposal(None, 'client-key-a', 'A', 'mensagem', 1000, 'API', 'client-42')
+    second.register_proposal(None, 'client-key-b', 'B', 'mensagem', 1000, 'API', 'client-42')
+    barrier = threading.Barrier(2)
+    results = []
+
+    def claim(db, key):
+        barrier.wait(timeout=2)
+        results.append(db.claim_send(key))
+
+    workers = [threading.Thread(target=claim, args=(first, 'client-key-a')),
+               threading.Thread(target=claim, args=(second, 'client-key-b'))]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=3)
+    assert sorted(results) == [False, True]
 
 
 def test_pause_circuit_blocks_after_rejections(tmp_path):

@@ -4,9 +4,35 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def sha(value: str): return hashlib.sha256(value.encode()).hexdigest()
+
+def normalize_client_key(value):
+    """Return one stable identity for a client URL or displayed name."""
+    if value is None:
+        return ''
+    text = ' '.join(str(value).split()).strip()
+    if not text:
+        return ''
+    if '://' in text:
+        parsed = urlsplit(text)
+        if parsed.netloc:
+            host = parsed.netloc.lower()
+            if host.startswith('www.'):
+                host = host[4:]
+            path = re.sub(r'/users?/', '/user/', parsed.path.rstrip('/'), flags=re.IGNORECASE)
+            return f'{host}{path}'
+    return ''.join(c for c in unicodedata.normalize('NFKD', text.lower())
+                   if not unicodedata.combining(c))
+
+def stable_proposal_key(url='', external_id='', title='', client_key='', profile_id='default'):
+    """Build an idempotency key that does not change when the copy is regenerated."""
+    identity = normalize_client_key(url)
+    if not identity:
+        identity = '|'.join((normalize_client_key(external_id), normalize_client_key(title), normalize_client_key(client_key)))
+    return sha('|'.join(('freelahunter-proposal-v2', identity, str(profile_id))))
 
 def classify_price(value):
     if value is None: return 'não classificado'
@@ -43,6 +69,7 @@ class Job:
 @dataclass
 class Profile:
     name: str=''; headline: str=''; bio: str=''; skills: list[str]=field(default_factory=list); experience: list[str]=field(default_factory=list); education: str=''; portfolio: list[str]=field(default_factory=list); preferred_jobs: list[str]=field(default_factory=list); excluded_jobs: list[str]=field(default_factory=list); minimum_budget: float|None=None; languages: list[str]=field(default_factory=list); team_description: str='equipe de desenvolvedores full stack'; client_pays_paid_services: bool=True; id: str='default'
+    locale: str='pt-BR'; currency: str='BRL'; pricing_path: str='config/pricing.json'; knowledge_path: str='knowledge/team-devs-senior-full-stack.md'
 
 @dataclass
 class PortfolioProject:
@@ -154,13 +181,15 @@ class ProposalValidator:
                        'preço inicial')
 
     @staticmethod
-    def _price_variants(value):
+    def _price_variants(value, currency='BRL'):
         try:
             amount = float(value)
         except (TypeError, ValueError):
             return ()
         if not math.isfinite(amount) or amount < 0:
             return ()
+        if str(currency).upper() == 'USD':
+            return f'$ {amount:,.2f}'.lower(), f'${amount:,.2f}'.lower(), f'usd {amount:,.2f}'.lower()
         english = f'R$ {amount:,.2f}'
         brazilian = english.replace(',', '_').replace('.', ',').replace('_', '.')
         return english.lower(), brazilian.lower()
@@ -170,14 +199,19 @@ class ProposalValidator:
         if not 100 <= len(m.split()) <= 220: reasons.append('tamanho fora de 100-220 palavras')
         if not m or not proposal.subject: reasons.append('campo vazio')
         if any(x.lower() in low for x in self.BAD): reasons.append('placeholder')
-        if 'dois desenvolvedores full stack' not in low:
-            reasons.append('proposta não apresenta a equipe de dois desenvolvedores full stack')
-        if not any(term in low for term in self.NEGOTIATION_TERMS):
-            reasons.append('proposta não informa que o valor pode ser negociado')
+        english = str(getattr(profile, 'locale', '')).lower().startswith('en')
+        team = str(getattr(profile, 'team_description', '') or '').strip().lower()
+        team_terms = [team] if team else []
+        team_terms += ['two-developer full-stack team', 'two full-stack developers'] if english else ['dois desenvolvedores full stack', 'equipe de dois desenvolvedores full stack']
+        if not any(term in low for term in team_terms):
+            reasons.append('proposal does not present the two-developer full-stack team' if english else 'proposta não apresenta a equipe de dois desenvolvedores full stack')
+        negotiation_terms = ('we can negotiate the price', 'the price is negotiable', 'price is negotiable', 'initial estimate') if english else self.NEGOTIATION_TERMS
+        if not any(term in low for term in negotiation_terms):
+            reasons.append('proposal does not say that the price is negotiable' if english else 'proposta não informa que o valor pode ser negociado')
         if proposal.suggested_price is not None:
-            variants = self._price_variants(proposal.suggested_price)
+            variants = self._price_variants(proposal.suggested_price, getattr(profile, 'currency', 'BRL'))
             if not variants or not any(variant in low for variant in variants):
-                reasons.append('proposta não apresenta o preço sugerido')
+                reasons.append('proposal does not present the suggested price' if english else 'proposta não apresenta o preço sugerido')
         known={x.lower() for x in profile.skills}; mentioned=re.findall(r'\b[A-Za-z][A-Za-z+#.]+\b',m)
         # only flag obvious unsupported technology claims
         if any(t in low for t in ['django','kubernetes']) and not any(t in known for t in ['django','kubernetes']): reasons.append('tecnologia não presente no perfil')
@@ -289,6 +323,7 @@ class Database:
             'outcome_status': "TEXT NOT NULL DEFAULT 'draft'",
             'outcome_updated_at': 'TEXT', 'project_type': 'TEXT',
             'conversation_id': 'TEXT', 'client_key': 'TEXT', 'price_band': 'TEXT',
+            'send_kind': "TEXT NOT NULL DEFAULT 'proposal'",
         }
         for name, definition in additions.items():
             if name not in columns:
@@ -318,6 +353,10 @@ class Database:
         self.conn.execute('''CREATE INDEX IF NOT EXISTS idx_messages_conversation ON conversation_messages(conversation_id)''')
         self.conn.execute('''INSERT OR IGNORE INTO automation_state(id, paused, updated_at) VALUES (1, 0, ?)''', (now(),))
         self.conn.execute('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ?)', (now(),))
+        for row_id, client_key in self.conn.execute('SELECT id,client_key FROM proposals WHERE client_key IS NOT NULL').fetchall():
+            normalized = normalize_client_key(client_key)
+            if normalized != client_key:
+                self.conn.execute('UPDATE proposals SET client_key=? WHERE id=?', (normalized, row_id))
         self.conn.commit()
     def upsert_job(self,j):
         j.compute_hash(); t=now()
@@ -344,26 +383,50 @@ class Database:
             (key,),
         ).fetchone() is not None
 
-    def claim_send(self, key):
+    def claim_send(self, key, maximum_per_client=1, window_seconds=86400):
         """Atomically reserve a proposal before an external send/click.
 
         Keeping an uncertain attempt in SENDING is intentional: retrying after a
         timeout could create a duplicate message on the platform.
         """
         with self.lock:
-            cursor = self.conn.execute(
-                '''UPDATE proposals SET status='SENDING'
-                   WHERE idempotency_key=? AND status NOT IN ('SENT', 'SENDING')''',
-                (key,),
-            )
-            self.conn.commit()
-            return cursor.rowcount == 1
-    def save_proposal(self,p,key,status='GENERATED', project_type=None, client_key=None, conversation_id=None, price_band=None):
+            self.conn.execute('BEGIN IMMEDIATE')
+            try:
+                row = self.conn.execute(
+                    'SELECT status,client_key FROM proposals WHERE idempotency_key=?', (key,)
+                ).fetchone()
+                if not row or row[0] in {'SENT', 'SENDING'}:
+                    self.conn.rollback()
+                    return False
+                client_key = normalize_client_key(row[1])
+                if client_key and maximum_per_client > 0:
+                    cutoff = str(int(time.time() - window_seconds))
+                    count = self.conn.execute('''SELECT COUNT(*) FROM proposals
+                        WHERE status IN ('SENT','SENDING') AND client_key=?
+                        AND (status='SENDING' OR strftime('%s', sent_at) >= ?)''',
+                        (client_key, cutoff)).fetchone()[0]
+                    if count >= maximum_per_client:
+                        self.conn.rollback()
+                        return False
+                cursor = self.conn.execute(
+                    '''UPDATE proposals SET status='SENDING'
+                       WHERE idempotency_key=? AND status NOT IN ('SENT', 'SENDING')''',
+                    (key,),
+                )
+                self.conn.commit()
+                return cursor.rowcount == 1
+            except Exception:
+                self.conn.rollback()
+                raise
+    def save_proposal(self,p,key,status='GENERATED', project_type=None, client_key=None, conversation_id=None, price_band=None, send_kind='proposal'):
         project_type = classify_project_type(project_type or p.subject)
+        client_key = normalize_client_key(client_key) or None
+        if send_kind not in {'proposal', 'message'}:
+            raise ValueError('send_kind inválido')
         self.conn.execute('''INSERT INTO proposals(
             job_id,idempotency_key,subject,message,validation_status,status,suggested_price,
-            project_type,client_key,conversation_id,price_band
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO UPDATE SET
+            project_type,client_key,conversation_id,price_band,send_kind
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO UPDATE SET
             subject=excluded.subject, message=excluded.message,
             validation_status=excluded.validation_status,
             status=CASE WHEN proposals.status IN ('SENT', 'SENDING') THEN proposals.status ELSE excluded.status END,
@@ -371,15 +434,17 @@ class Database:
             project_type=COALESCE(excluded.project_type, proposals.project_type),
             client_key=COALESCE(excluded.client_key, proposals.client_key),
             conversation_id=COALESCE(excluded.conversation_id, proposals.conversation_id),
-            price_band=COALESCE(excluded.price_band, proposals.price_band)
-        ''', (p.job_id or None,key,p.subject,p.message,p.validation_status,status,p.suggested_price,project_type,client_key,conversation_id,price_band or classify_price(p.suggested_price)))
+            price_band=COALESCE(excluded.price_band, proposals.price_band),
+            send_kind=CASE WHEN proposals.status IN ('SENT', 'SENDING') THEN proposals.send_kind ELSE excluded.send_kind END
+        ''', (p.job_id or None,key,p.subject,p.message,p.validation_status,status,p.suggested_price,project_type,client_key,conversation_id,price_band or classify_price(p.suggested_price),send_kind))
         self.conn.commit()
         return self.conn.execute('SELECT id FROM proposals WHERE idempotency_key=?', (key,)).fetchone()[0]
 
     def register_proposal(self, job_id, key, subject, message, price=None, project_type=None,
-                          client_key=None, conversation_id=None, validation_status='PENDING'):
+                          client_key=None, conversation_id=None, validation_status='PENDING', send_kind='proposal'):
         proposal = ProposalDraft(job_id or 0, subject, message, 0, price, [], validation_status=validation_status)
-        return self.save_proposal(proposal, key, 'GENERATED', project_type, client_key, conversation_id, classify_price(price))
+        return self.save_proposal(proposal, key, 'GENERATED', project_type, client_key, conversation_id,
+                                  classify_price(price), send_kind)
 
     def mark_sent(self,key,external_id,conversation_id=None):
         sent_at = now()
@@ -481,6 +546,7 @@ class Database:
         return True, 'ok'
 
     def client_send_gate(self, client_key, maximum=1, window_seconds=86400):
+        client_key = normalize_client_key(client_key)
         if not client_key:
             return True, 'cliente sem identificador'
         cutoff = str(int(time.time() - window_seconds))
@@ -493,11 +559,13 @@ class Database:
 
     def client_message_gate(self, client_key, maximum=1, window_seconds=86400):
         """Keep automatic fallback messages to one per client per window."""
+        client_key = normalize_client_key(client_key)
         if not client_key:
             return True, 'cliente sem identificador'
         cutoff = str(int(time.time() - window_seconds))
         count = self.conn.execute('''SELECT COUNT(*) FROM proposals
-            WHERE status IN ('SENT', 'SENDING') AND suggested_price IS NULL
+            WHERE status IN ('SENT', 'SENDING') AND
+            (send_kind='message' OR suggested_price IS NULL)
             AND client_key IS NOT NULL AND client_key=?
             AND (status='SENDING' OR strftime('%s', sent_at) >= ?)''', (client_key, cutoff)).fetchone()[0]
         if count >= maximum:
@@ -585,7 +653,7 @@ def run_pipeline(provider, db, profile=None, auto_send=False, dry_run=True, kill
             if dup: stats['duplicates']+=1; db.audit('job_duplicate', job_id=job.id); continue
             stats['new']+=1
             if not job_filter.accepts(job): job.status=JobStatus.REJECTED; db.audit('job_filtered', job_id=job.id, details={'reason': 'profile_rules'}); continue
-            stats['filtered']+=1; projects=portfolio.relevant(job,profile); analysis=ai.analyze(job,profile,projects); stats['analyzed']+=1; price,_=PriceEstimator(hourly_rate=100,minimum_project_price=200).estimate((analysis.estimated_hours_min+analysis.estimated_hours_max)//2, budget_max=job.budget_max); p=gen.generate(job,analysis,profile,projects,price); val.validate(p,profile); stats['proposals']+=1; key=sha(provider.name+job.external_id+profile.id)
+            stats['filtered']+=1; projects=portfolio.relevant(job,profile); analysis=ai.analyze(job,profile,projects); stats['analyzed']+=1; price,_=PriceEstimator(hourly_rate=100,minimum_project_price=200).estimate((analysis.estimated_hours_min+analysis.estimated_hours_max)//2, budget_max=job.budget_max); p=gen.generate(job,analysis,profile,projects,price); val.validate(p,profile); stats['proposals']+=1; key=stable_proposal_key(job.url, job.external_id, job.title, job.client_key, profile.id)
             db.audit('proposal_generated', job_id=job.id, details={'validation_status': p.validation_status, 'price': p.suggested_price})
             within_limits=db.send_gate(max_per_hour, max_per_day)[0]
             client_allowed = db.client_send_gate(job.client_key)[0]
