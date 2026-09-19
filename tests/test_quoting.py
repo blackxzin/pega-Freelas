@@ -1,6 +1,7 @@
 import json
+import re
 import pytest
-from freelahunter.core import ProfileService, PriceEstimator
+from freelahunter.core import ProfileService, PriceEstimator, ProposalDraft, ProposalValidator
 from freelahunter.quoting import build_quote, ROOT
 
 
@@ -81,8 +82,83 @@ def test_market_reference_is_advisory_and_does_not_override_calculation():
 
 
 def test_configured_proposal_price_band_limits_values():
-    result = quote('Marketplace SaaS com pagamentos', 'Criar plataforma com API, painel, login e pagamento.')
-    assert all(3000 <= price <= 7000 for price in result['price_range'])
+    result = quote(
+        'Marketplace SaaS com pagamentos',
+        'Criar uma plataforma com API, painel, login e pagamento. '
+        'O cliente fornece layout aprovado, textos, imagens, regras de negócio e acessos. '
+        'A entrega inclui implementação, testes, documentação e validação dos fluxos principais '
+        'em desktop e celular com uma rodada de revisão.',
+    )
+    assert all(900 <= price <= 6000 for price in result['price_range'])
+    assert result['action'] == 'question'
+    assert result['suggested_price'] is None
+
+
+def test_generated_message_passes_validator_with_explicit_price_and_commercial_terms():
+    result = quote(
+        'Landing page',
+        'Criar uma landing page responsiva com apresentação dos serviços, depoimentos e contato. '
+        'Fornecemos layout aprovado, textos e imagens finais. A entrega inclui HTML e CSS, '
+        'publicação na hospedagem do cliente e uma rodada de revisão com comparação visual em desktop e celular.',
+    )
+    proposal = ProposalDraft(
+        1, result['subject'], result['message'], result['estimated_hours'],
+        result['suggested_price'], result['questions'],
+    )
+
+    status, reasons = ProposalValidator().validate(proposal, ProfileService().load())
+
+    assert status == 'PASSED', reasons
+    assert 'equipe de dois desenvolvedores full stack' in result['message']
+    assert 'preço pode ser negociado' in result['message']
+    assert 'contas do cliente' in result['message']
+
+
+@pytest.mark.parametrize(
+    ('setting', 'value'),
+    [
+        ('proposal_price_floor', 0),
+        ('proposal_price_ceiling', 0),
+        ('proposal_price_ceiling', 899),
+        ('fee_fraction', 1),
+        ('risk_buffer', -0.01),
+    ],
+)
+def test_invalid_price_configuration_is_rejected(setting, value):
+    settings = json.loads((ROOT / 'config/pricing.json').read_text())
+    settings[setting] = value
+
+    with pytest.raises(ValueError):
+        build_quote({'title': 'Landing page', 'description': 'Criar uma landing page.'}, ProfileService().load(), settings)
+
+
+def test_validator_rejects_proposal_message_without_price():
+    result = quote(
+        'Landing page',
+        'Criar uma landing page responsiva com apresentação dos serviços, depoimentos e contato. '
+        'Fornecemos layout aprovado, textos e imagens finais. A entrega inclui HTML e CSS, '
+        'publicação na hospedagem do cliente e uma rodada de revisão com comparação visual em desktop e celular.',
+    )
+    message_without_price = re.sub(r'R\$ [\d.]+,\d{2}', '', result['message'])
+    proposal = ProposalDraft(1, result['subject'], message_without_price, 10, result['suggested_price'], [])
+
+    status, reasons = ProposalValidator().validate(proposal, ProfileService().load())
+
+    assert status == 'FAILED', reasons
+
+
+def test_validator_rejects_message_with_inconsistent_price():
+    result = quote(
+        'Landing page',
+        'Criar uma landing page responsiva com apresentação dos serviços, depoimentos e contato. '
+        'Fornecemos layout aprovado, textos e imagens finais. A entrega inclui HTML e CSS, '
+        'publicação na hospedagem do cliente e uma rodada de revisão com comparação visual em desktop e celular.',
+    )
+    proposal = ProposalDraft(1, result['subject'], result['message'], 10, 900, [])
+
+    status, reasons = ProposalValidator().validate(proposal, ProfileService().load())
+
+    assert status == 'FAILED', reasons
 
 
 def test_off_platform_contact_requires_manual_review():

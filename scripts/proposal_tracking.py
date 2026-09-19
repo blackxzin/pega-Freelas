@@ -30,7 +30,8 @@ def register(args):
         payload.get('message', ''), payload.get('price'), payload.get('project_type'),
         payload.get('client_key'), payload.get('conversation_id'), payload.get('validation_status', 'PENDING'),
     )
-    emit({'proposal_id': proposal_id, 'idempotency_key': key, 'already_sent': bool(existing and existing[0] == 'SENT')})
+    emit({'proposal_id': proposal_id, 'idempotency_key': key,
+          'already_sent': bool(existing and existing[0] in {'SENT', 'SENDING'})})
 
 
 def mark_sent(args):
@@ -38,14 +39,23 @@ def mark_sent(args):
     row = db.conn.execute('SELECT idempotency_key, status FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
     if not row:
         raise SystemExit(f'proposta não encontrada: {args.proposal_id}')
-    db.mark_sent(row[0], args.external_id or f'manual-{args.proposal_id}', args.conversation_id)
+    marked = db.mark_sent(row[0], args.external_id or f'manual-{args.proposal_id}', args.conversation_id)
     # The browser bridge is an external sender, so it must consume the same
     # rolling-window counters used by the native pipeline.  Do this only on
     # the first transition to SENT to keep retries idempotent.
-    if row[1] != 'SENT':
+    if marked:
         db.consume_limit('send-hour')
         db.consume_limit('send-day')
-    emit({'proposal_id': args.proposal_id, 'status': 'SENT'})
+    current = db.conn.execute('SELECT status FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
+    emit({'proposal_id': args.proposal_id, 'status': current[0] if current else None, 'marked': marked})
+
+
+def claim(args):
+    db = database(args)
+    row = db.conn.execute('SELECT idempotency_key FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
+    if not row:
+        raise SystemExit(f'proposta não encontrada: {args.proposal_id}')
+    emit({'proposal_id': args.proposal_id, 'claimed': db.claim_send(row[0])})
 
 
 def set_status(args):
@@ -108,6 +118,7 @@ def main():
     parser.add_argument('--database', default='freelahunter.db')
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('register'); p.set_defaults(func=register)
+    p = sub.add_parser('claim'); p.add_argument('--proposal-id', type=int, required=True); p.set_defaults(func=claim)
     p = sub.add_parser('sent'); p.add_argument('--proposal-id', type=int, required=True); p.add_argument('--external-id'); p.add_argument('--conversation-id'); p.set_defaults(func=mark_sent)
     p = sub.add_parser('status'); p.add_argument('--proposal-id', type=int, required=True); p.add_argument('--set', dest='status', choices=sorted(Database.OUTCOME_STATUSES), required=True); p.add_argument('--reason'); p.set_defaults(func=set_status)
     p = sub.add_parser('message'); p.add_argument('--conversation-id', required=True); p.add_argument('--proposal-id', type=int); p.add_argument('--job-id', type=int); p.add_argument('--direction', choices=['inbound', 'outbound'], default='inbound'); p.add_argument('--scope-context', action='store_true'); p.add_argument('--text', required=True); p.set_defaults(func=add_message)

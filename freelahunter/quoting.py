@@ -174,10 +174,11 @@ def build_quote(snapshot, profile, settings=None):
                'Novas funcionalidades são orçadas separadamente. '
                'Nossa proposta cobre desenvolvimento e configuração; APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.')
     if action == 'proposal':
-        message += (f' Para esse escopo, propomos {format_brl(prices[1])} e prazo de até {days[1]} dias corridos, '
-                    'incluindo testes e uma rodada de revisão. O valor pode ser combinado conforme os detalhes '
-                    'finais do escopo e as prioridades do projeto. Se fizer sentido, podemos alinhar os detalhes '
-                    'e as etapas aqui pela plataforma.')
+        message += (f' Como proposta inicial para esse escopo, indicamos {format_brl(prices[1])} e prazo de até '
+                    f'{days[1]} dias corridos, incluindo testes e uma rodada de revisão. Esse é um valor de '
+                    'referência. O valor pode ser combinado e o preço pode ser negociado conforme os detalhes finais, '
+                    'o escopo e as prioridades '
+                    'do projeto. Se fizer sentido, podemos alinhar as etapas e ajustar a proposta aqui pela plataforma.')
     return dict(action=action, subject=f'Proposta: {title}', message=message, question=question,
                 suggested_price=prices[1] if prices and action == 'proposal' else None,
                 estimated_days=days[1] if days and action == 'proposal' else None,

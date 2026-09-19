@@ -76,9 +76,10 @@ function forceProposalDraft(draft) {
   draft.suggested_price = draft.price_range[1];
   draft.estimated_days = days;
   draft.message = `Olá! Temos interesse no projeto “${title}”. Entendemos que a entrega envolve ${scope}. `
+    + 'Somos uma equipe de dois desenvolvedores full stack que trabalham juntos. '
     + 'Propomos executar em etapas verificáveis, com alinhamento, implementação, testes e entrega documentada. '
-    + `Para esta estimativa preliminar, propomos ${brl(draft.suggested_price)} e prazo de até ${days} dias corridos. `
-    + 'O valor pode ser negociado conforme os detalhes finais do escopo e as prioridades do projeto. '
+    + `Como referência inicial, propomos ${brl(draft.suggested_price)} e prazo de até ${days} dias corridos. `
+    + 'O preço pode ser negociado conforme os detalhes finais do escopo e as prioridades do projeto. '
     + 'APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.';
   draft.validation_status = 'PENDING';
   draft.validation_reasons = ['Estimativa automática preliminar; confirmar escopo com o cliente.'];
@@ -97,6 +98,14 @@ function clientContext(clientKey) {
   const result = spawnSync('python', ['scripts/proposal_tracking.py', 'context', '--client-key', clientKey], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) return [];
   return JSON.parse(result.stdout.trim().split('\n').pop()).messages || [];
+}
+
+function claimSend(proposalId) {
+  const result = spawnSync('python', ['scripts/proposal_tracking.py', 'claim', '--proposal-id', String(proposalId)], {
+    cwd: root, encoding: 'utf8',
+  });
+  if (result.status !== 0) return false;
+  return JSON.parse(result.stdout.trim().split('\n').pop()).claimed === true;
 }
 
 async function notifyPause(reason) {
@@ -288,6 +297,10 @@ async function main() {
         if (await checkbox.count() && await checkbox.isVisible() && !await checkbox.isChecked()) await checkbox.check();
       }
       if (submit) {
+        if (!claimSend(tracked.proposal_id)) {
+          console.log('IGNORADA: outro processo já reservou ou enviou esta proposta.');
+          continue;
+        }
         const responsePromise = jobPage.waitForResponse((response) =>
           response.request().method() === 'POST' && /\/services\/project\//.test(response.url()),
         { timeout: 15000 }).catch(() => null);

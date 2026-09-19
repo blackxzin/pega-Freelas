@@ -9,7 +9,7 @@ consultiva. O bot registra alertas quando o valor/hora implícito sai da faixa d
 referência, mas não altera o preço calculado para forçar encaixe nessa faixa.
 
 As premissas estão em `config/pricing.json`: R$ 45 por hora de trabalho,
-valor enviado entre R$ 3.000 e R$ 7.000, seis horas produtivas por dia para a
+valor enviado entre R$ 900 e R$ 6.000, seis horas produtivas por dia para a
 equipe inteira, 20% de testes, 25% de reserva e dois dias úteis para revisão.
 Esses números são
 premissas internas ajustáveis, não uma média de mercado pesquisada. Não se
@@ -48,7 +48,8 @@ da página como se fosse escopo. Os seletores de restrição/Premium dependem do
 HTML da plataforma e precisam de validação em navegação real; não há garantia
 de detectar todo selo apenas por sua cor.
 
-As propostas apresentam a equipe, entregas, validação, negociação e custos
+As propostas apresentam a equipe de dois desenvolvedores full stack, entregas,
+validação, preço inicial com possibilidade explícita de negociação e custos
 externos na conta do cliente. Não apresentam experiência inventada, graduação,
 links ou dados de contato. Os exemplos dos primeiros envios são contexto
 comercial, não contratos concluídos nem evidência de produtividade real.
