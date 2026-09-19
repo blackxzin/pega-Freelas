@@ -29,6 +29,7 @@ const runForever = process.env.RUN_FOREVER === 'true';
 const pollSeconds = Math.max(60, Number(process.env.HUNT_POLL_SECONDS || (Number(process.env.HUNT_INTERVAL_MINUTES || 15) * 60)));
 const forceProposal = process.env.AUTO_FORCE_PROPOSAL === 'true';
 const maxProposalsPerClient = Math.max(1, Number(process.env.MAX_PROPOSALS_PER_CLIENT_24H || 1));
+const maxIdleCycles = Math.max(0, Number(process.env.STOP_AFTER_IDLE_CYCLES || 0));
 const premium = /premium|projeto exclusivo|bandeira dourada|selo dourado|assinar|assinatura|turbinar/i;
 
 function generate(snapshot) {
@@ -125,15 +126,17 @@ async function humanPause() {
 async function conversationMessages(page, messagePageUrl) {
   await page.goto(messagePageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   const conversationLink = await firstLocator(page, selectors.conversation.link);
-  if (!conversationLink) return null;
-  const href = await conversationLink.getAttribute('href');
-  await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await humanPause();
+  if (conversationLink) {
+    const href = await conversationLink.getAttribute('href');
+    await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await humanPause();
+  }
   for (const selector of selectors.conversation.message) {
     const messages = page.locator(selector);
     if (await messages.count()) return messages.allTextContents();
   }
-  return [];
+  if (/\/messages\//i.test(page.url())) return [await page.locator('body').innerText()];
+  return null;
 }
 
 async function alreadyContacted(page, messagePageUrl, draft) {
@@ -150,7 +153,11 @@ async function alreadyContacted(page, messagePageUrl, draft) {
 
 async function verifyQuestion(page, messagePageUrl, expected) {
   const messages = await conversationMessages(page, messagePageUrl);
-  return messages !== null && hasExactMessage(messages, expected);
+  const wanted = String(expected || '').replace(/\s+/g, ' ').trim();
+  if (messages?.some((message) => String(message).replace(/\s+/g, ' ').trim().includes(wanted))) return true;
+  await page.goto('https://www.99freelas.com.br/messages/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const inboxText = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
+  return wanted.length > 40 && inboxText.includes(wanted.slice(0, 80));
 }
 
 async function fillJob(page, link) {
@@ -220,7 +227,8 @@ async function main() {
   }
   console.log(JSON.stringify({ event: 'hunt_started', auto_send: autoSend, dry_run: dryRun,
     run_forever: runForever, force_proposal: forceProposal, poll_seconds: pollSeconds,
-    max_jobs: maxJobs, max_proposals_per_client_24h: maxProposalsPerClient }));
+    max_jobs: maxJobs, max_proposals_per_client_24h: maxProposalsPerClient,
+    stop_after_idle_cycles: maxIdleCycles }));
   let context;
   try {
     context = await chromium.launchPersistentContext(profileDir, {
@@ -230,6 +238,7 @@ async function main() {
     });
     const page = context.pages()[0] || await context.newPage();
     let firstCycle = true;
+    let idleCycles = 0;
     while (true) {
     await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     if (firstCycle && process.env.AUTO_LOGIN_PROMPT !== 'false' && !autoSend) await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
@@ -246,6 +255,7 @@ async function main() {
       });
     })();
     let processed = 0;
+    let cycleSent = 0;
     for (const item of links) {
     if (processed >= maxJobs) break;
     if (premium.test(item.text)) continue;
@@ -259,7 +269,6 @@ async function main() {
       console.log(`IGNORADA: proposta não passou validação — ${(result.draft.validation_reasons || []).join('; ')}`);
       continue;
     }
-    processed += 1;
     console.log(`${result.kind.toUpperCase()} preenchida: ${result.draft.subject || item.href}`);
     console.log(`Valor sugerido: R$ ${result.draft.suggested_price ?? 'a combinar'} | prazo: ${result.draft.estimated_days} dias`);
     console.log(`Texto preparado:\n${result.kind === 'question' ? result.draft.question : result.draft.message}`);
@@ -267,9 +276,14 @@ async function main() {
       client_key: result.snapshot.client_key,
       max_per_day: maxProposalsPerClient,
     });
+    const messageOnClientLimit = process.env.AUTO_MESSAGE_ON_LIMIT === 'true'
+      && result.kind === 'question' && !clientGate.allowed;
     if (!clientGate.allowed) {
-      console.log(`IGNORADA: ${clientGate.reason} — ${item.href}`);
-      continue;
+      if (!messageOnClientLimit) {
+        console.log(`IGNORADA: ${clientGate.reason} — ${item.href}`);
+        continue;
+      }
+      console.log(`LIMITE DE PROPOSTAS: tentando enviar mensagem ao cliente — ${item.href}`);
     }
     const tracked = tracking('register', {
       url: result.snapshot.url, title: result.snapshot.title, subject: result.draft.subject,
@@ -282,8 +296,10 @@ async function main() {
       console.log(`IGNORADA: proposta já enviada anteriormente — ${item.href}`);
       continue;
     }
+    processed += 1;
     const answer = autoSend ? 'ENVIAR' : await ask('Digite ENVIAR para clicar no envio desta vaga, ou Enter para deixar como rascunho: ');
     if (answer.trim() === 'ENVIAR') {
+    if (!messageOnClientLimit) {
       const gate = spawnSync('python', ['scripts/proposal_tracking.py', 'gate', '--max-per-hour', process.env.MAX_PROPOSALS_PER_HOUR || '3', '--max-per-day', process.env.MAX_PROPOSALS_PER_DAY || '10', '--no-response-days', process.env.PAUSE_NO_RESPONSE_DAYS || '7', '--consecutive-no-response', process.env.PAUSE_CONSECUTIVE_NO_RESPONSE || '5', '--rejection-threshold', process.env.PAUSE_REJECTION_THRESHOLD || '0.6'], { cwd: root, encoding: 'utf8' });
       if (gate.status !== 0) {
         const reason = gate.stdout?.trim().split('\n').pop() || gate.stderr;
@@ -291,6 +307,7 @@ async function main() {
         try { await notifyPause(reason); } catch (error) { console.log(`Falha ao avisar pausa: ${error.message}`); }
         continue;
       }
+    }
       const submit = await visibleLocator(jobPage, result.kind === 'question' ? selectors.proposal.submit_question : selectors.proposal.submit_proposal);
       for (const selector of selectors.proposal.confirmations) {
         const checkbox = jobPage.locator(selector).first();
@@ -314,9 +331,11 @@ async function main() {
           const confirmed = await verifyQuestion(jobPage, result.messagePageUrl, result.draft.question);
           if (!confirmed) throw new Error('O site não confirmou a mensagem na conversa; envio não será repetido automaticamente.');
           markSent(tracked.proposal_id, `question-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
-          console.log(`ENVIO CONFIRMADO na conversa: ${jobPage.url()}`);
+          cycleSent += 1;
+          console.log(`${messageOnClientLimit ? 'MENSAGEM' : 'ENVIO'} CONFIRMADO na conversa: ${jobPage.url()}`);
         } else if (response?.ok()) {
           markSent(tracked.proposal_id, `proposal-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
+          cycleSent += 1;
           console.log(`ENVIO CONFIRMADO pelo site (HTTP ${response.status()}). Página atual: ${jobPage.url()}`);
         } else {
           console.log('Clique realizado, mas sem confirmação inequívoca do site; o bot não repetirá automaticamente.');
@@ -330,7 +349,12 @@ async function main() {
       await jobPage.close().catch(() => {});
     }
     }
-    console.log(`Ciclo concluído: ${processed} vaga(s). Chromium permanece aberto.`);
+    idleCycles = cycleSent === 0 ? idleCycles + 1 : 0;
+    console.log(`Ciclo concluído: ${processed} vaga(s), ${cycleSent} envio(s). Chromium permanece aberto.`);
+    if (runForever && maxIdleCycles > 0 && idleCycles >= maxIdleCycles) {
+      console.log(`Caça encerrada após ${idleCycles} ciclo(s) sem envio para economizar créditos.`);
+      break;
+    }
     if (!runForever) {
       await ask('Pressione Enter para fechar Chromium: ');
       break;

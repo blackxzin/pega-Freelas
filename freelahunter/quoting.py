@@ -164,7 +164,8 @@ def build_quote(snapshot, profile, settings=None):
     opening = (f'{greeting} Somos uma equipe de dois desenvolvedores full stack que trabalham juntos e temos interesse '
                f'no projeto “{title}”.')
     question = (opening + ' ' + ' '.join(questions) +
-                ' Depois desses detalhes, podemos combinar um valor justo conforme o escopo e as prioridades. '
+                ' Depois desses detalhes, o valor é a combinar conforme o escopo e as prioridades; '
+                'podemos combinar um valor justo. '
                 'Custos de APIs, hospedagem e serviços pagos ficam nas contas do cliente.')
     scope = '; '.join(t['deliverable'] for t in tasks[:5])
     message = (opening + f' Entendemos que a entrega envolve {scope}. '
