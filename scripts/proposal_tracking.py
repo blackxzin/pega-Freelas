@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from freelahunter.core import Database, sha
+from freelahunter.core import Database, normalize_client_key, sha, stable_proposal_key
 
 
 def database(args):
@@ -23,27 +23,42 @@ def emit(value):
 def register(args):
     payload = json.load(sys.stdin)
     db = database(args)
-    key = payload.get('idempotency_key') or sha('|'.join(str(payload.get(k, '')) for k in ('url', 'title', 'message')))
+    client_key = normalize_client_key(payload.get('client_key'))
+    explicit_key = payload.get('idempotency_key')
+    key = explicit_key or stable_proposal_key(
+        payload.get('url'), payload.get('external_id'), payload.get('title'), client_key,
+        payload.get('profile_id', 'default'),
+    )
+    # Keep compatibility with records created by the old message-based key.
+    # Once found, continue using that key so a previously sent item cannot be
+    # re-submitted merely because its generated copy changed.
+    legacy_key = sha('|'.join(str(payload.get(k, '')) for k in ('url', 'title', 'message')))
     existing = db.conn.execute('SELECT status FROM proposals WHERE idempotency_key=?', (key,)).fetchone()
+    if not explicit_key and not existing and legacy_key != key:
+        legacy = db.conn.execute('SELECT status FROM proposals WHERE idempotency_key=?', (legacy_key,)).fetchone()
+        if legacy:
+            key, existing = legacy_key, legacy
+    send_kind = payload.get('send_kind', 'proposal')
     proposal_id = db.register_proposal(
         payload.get('job_id'), key, payload.get('subject') or f"Proposta: {payload.get('title', '')}",
         payload.get('message', ''), payload.get('price'), payload.get('project_type'),
-        payload.get('client_key'), payload.get('conversation_id'), payload.get('validation_status', 'PENDING'),
+        client_key, payload.get('conversation_id'), payload.get('validation_status', 'PENDING'), send_kind,
     )
     emit({'proposal_id': proposal_id, 'idempotency_key': key,
+          'send_kind': send_kind,
           'already_sent': bool(existing and existing[0] in {'SENT', 'SENDING'})})
 
 
 def mark_sent(args):
     db = database(args)
-    row = db.conn.execute('SELECT idempotency_key, status FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
+    row = db.conn.execute('SELECT idempotency_key, status, send_kind FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
     if not row:
         raise SystemExit(f'proposta não encontrada: {args.proposal_id}')
     marked = db.mark_sent(row[0], args.external_id or f'manual-{args.proposal_id}', args.conversation_id)
     # The browser bridge is an external sender, so it must consume the same
     # rolling-window counters used by the native pipeline.  Do this only on
     # the first transition to SENT to keep retries idempotent.
-    if marked:
+    if marked and row[2] != 'message':
         db.consume_limit('send-hour')
         db.consume_limit('send-day')
     current = db.conn.execute('SELECT status FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
@@ -55,7 +70,8 @@ def claim(args):
     row = db.conn.execute('SELECT idempotency_key FROM proposals WHERE id=?', (args.proposal_id,)).fetchone()
     if not row:
         raise SystemExit(f'proposta não encontrada: {args.proposal_id}')
-    emit({'proposal_id': args.proposal_id, 'claimed': db.claim_send(row[0])})
+    emit({'proposal_id': args.proposal_id,
+          'claimed': db.claim_send(row[0], args.max_per_client, 86400)})
 
 
 def set_status(args):
@@ -126,7 +142,7 @@ def main():
     parser.add_argument('--database', default='freelahunter.db')
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('register'); p.set_defaults(func=register)
-    p = sub.add_parser('claim'); p.add_argument('--proposal-id', type=int, required=True); p.set_defaults(func=claim)
+    p = sub.add_parser('claim'); p.add_argument('--proposal-id', type=int, required=True); p.add_argument('--max-per-client', type=int, default=1); p.set_defaults(func=claim)
     p = sub.add_parser('sent'); p.add_argument('--proposal-id', type=int, required=True); p.add_argument('--external-id'); p.add_argument('--conversation-id'); p.set_defaults(func=mark_sent)
     p = sub.add_parser('status'); p.add_argument('--proposal-id', type=int, required=True); p.add_argument('--set', dest='status', choices=sorted(Database.OUTCOME_STATUSES), required=True); p.add_argument('--reason'); p.set_defaults(func=set_status)
     p = sub.add_parser('message'); p.add_argument('--conversation-id', required=True); p.add_argument('--proposal-id', type=int); p.add_argument('--job-id', type=int); p.add_argument('--direction', choices=['inbound', 'outbound'], default='inbound'); p.add_argument('--scope-context', action='store_true'); p.add_argument('--text', required=True); p.set_defaults(func=add_message)

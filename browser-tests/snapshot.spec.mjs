@@ -17,6 +17,8 @@ test('isola descrição e gera pergunta em Python sem preço fechado', async ({ 
   expect(draft.suggested_price).toBeNull();
   expect(draft.question).toContain('podemos combinar um valor justo');
   expect(draft.question).toContain('equipe de dois desenvolvedores full stack que trabalham juntos');
+  expect(draft.fallback_price).not.toBeNull();
+  expect(draft.fallback_message).toContain('preço pode ser negociado');
 });
 
 test('descrição desconhecida bloqueia orçamento em vez de usar anúncios da página', async ({ page }) => {
@@ -36,6 +38,22 @@ test('nome do cliente entra no snapshot sem capturar usuários das propostas', a
     '<div class="info-usuario cliente"><div class="info-usuario-nome"><span class="name">Guilherme H.</span></div></div>' +
     '<div class="proposal"><span class="name">Outro Usuário</span></div>');
   expect((await readSnapshot(page)).client).toBe('Guilherme H.');
+});
+
+test('snapshot do Upwork detecta USD e prazos em inglês', async ({ page }) => {
+  await page.setContent('<h1>Build API</h1><article>Build a REST API with authentication and documentation.</article>' +
+    '<div data-test="budget">$1,000.00 - $3,000.00</div><div data-test="duration">2 weeks</div>');
+  const snapshot = await readSnapshot(page, {
+    listing: { links: [] },
+    job: {
+      title: ['h1'], description: ['article'], premium_badge: [],
+      budget: ['[data-test="budget"]'], deadline: ['[data-test="duration"]'],
+      client: [], client_link: [],
+    }, proposal: {}, conversation: {}, inbox: {},
+  }, 'upwork');
+  expect(snapshot.currency).toBe('USD');
+  expect(snapshot.budget_max).toBe(3000);
+  expect(snapshot.deadline_days).toBe(2);
 });
 
 test('trava de envio reconhece mensagem idêntica mesmo com espaços diferentes', () => {

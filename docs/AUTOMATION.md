@@ -6,6 +6,14 @@ Envio automático exige `AUTO_SEND=true`, `DRY_RUN=false`, kill switch desligado
 validação aprovada, limites por hora/dia e circuito de pausa liberado. Defaults
 continuam seguros: `DRY_RUN=true`, `AUTO_SEND=false` e kill switch ligado.
 
+Antes de cada clique, o bot consulta o histórico local e reserva atomicamente a
+vaga e o cliente. A chave não depende do texto gerado, então recalcular preço ou
+mensagem não libera um reenvio. Quando o limite horário/diário de propostas acaba,
+o modo AUTO pode trocar a proposta por uma mensagem com preço preliminar calculado
+por escopo, sempre informando que o preço pode ser negociado. Mensagens não usam o
+limite de propostas, mas há uma trava separada por cliente (`MAX_MESSAGES_PER_CLIENT_24H`,
+padrão 1) para evitar spam.
+
 ## Navegador
 
 `ProposalBrowserAutomation` só abre vaga HTTPS e preenche proposta com validação `PASSED`. O adaptador não realiza login, não contorna CAPTCHA/anti-bot e não envia nada sem aprovação explícita do usuário e autorização do provider. O teste Playwright usa exclusivamente formulário HTML mock local: `npm run test:browser`.

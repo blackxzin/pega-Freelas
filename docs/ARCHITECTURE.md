@@ -2,7 +2,7 @@
 
 `ProviderRegistry` carrega `JobProvider`s; o pipeline normaliza `Job`, calcula SHA-256, persiste e deduplica, aplica filtros, analisa, consulta `PortfolioService`, gera e valida `ProposalDraft`, calcula preço e aplica `SendPolicyEngine`. SQLite mantém histórico e chave de idempotência única. Antes de qualquer envio, o processo faz uma reserva atômica `SENDING`; somente a reserva vencedora pode clicar/enviar. Uma falha, timeout ou encerramento após a reserva mantém `SENDING`, sem retry automático; a confirmação posterior é idempotente e só contabiliza o envio na transição efetiva para `SENT`.
 
-`SENDING` é deliberadamente conservador: exige reconciliação manual quando o resultado externo for incerto, pois liberar a reserva poderia duplicar a mensagem.
+`SENDING` é deliberadamente conservador: exige reconciliação manual quando o resultado externo for incerto, pois liberar a reserva poderia duplicar a mensagem. A reserva também verifica, na mesma transação SQLite, se o cliente já tem outro envio recente; assim workers concorrentes não conseguem abordar a mesma pessoa duas vezes. Propostas e mensagens fallback compartilham a proteção de idempotência, mas só propostas consomem os buckets de limite horário/diário.
 
 O schema é evoluído por migração aditiva na inicialização de `Database`. Além
 das tabelas originais, há eventos de proposta, mensagens de conversa, estado do

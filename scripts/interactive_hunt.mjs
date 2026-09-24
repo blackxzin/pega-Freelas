@@ -6,9 +6,10 @@ import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readSnapshot } from './job_snapshot.mjs';
 import { hasExactMessage, hasPriorProjectIntroduction } from './submission_guard.mjs';
-import { firstLocator, selectors } from './selectors.mjs';
+import { firstLocator, getPlatform, getSelectors } from './selectors.mjs';
 import { loadLocalEnv } from './local_env.mjs';
 import { sendDiscordNotification } from './discord_notify.mjs';
+import { isAccessChallenge, selectUpworkGoogleAccount, waitForManualAccess } from './access_guard.mjs';
 
 const rl = createInterface({ input, output });
 const ask = (question) => rl.question(question);
@@ -16,8 +17,10 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 loadLocalEnv(`${root}/.env`);
 const profileDir = process.env.BROWSER_PROFILE_DIR || `${root}/browser-profile`;
 mkdirSync(profileDir, { recursive: true });
-const maxJobs = Number(process.env.MAX_JOBS || 5);
-const listingUrl = process.env.JOBS_URL || 'https://www.99freelas.com.br/projects?categoria=web-mobile-e-software&page=4';
+const platform = getPlatform(process.env.PLATFORM || process.env.JOBS_URL);
+const selectors = getSelectors(platform.name);
+const listingUrl = process.env.JOBS_URL || platform.listing_url;
+const maxJobs = Number(process.env.MAX_JOBS || (platform.name === 'upwork' ? 2 : 5));
 const targetJobUrl = process.env.TARGET_JOB_URL;
 const automationMode = process.env.AUTOMATION_MODE || 'SEMI_AUTO';
 const autoSend = process.env.AUTO_SEND === 'true' && automationMode === 'AUTO';
@@ -26,12 +29,23 @@ const killSwitch = process.env.AUTO_SEND_KILL_SWITCH !== 'false';
 const minDelay = Math.max(0, Number(process.env.ACTION_DELAY_MIN_MS || 350));
 const maxDelay = Math.max(minDelay, Number(process.env.ACTION_DELAY_MAX_MS || 1200));
 const runForever = process.env.RUN_FOREVER === 'true';
-const pollSeconds = Math.max(60, Number(process.env.HUNT_POLL_SECONDS || (Number(process.env.HUNT_INTERVAL_MINUTES || 15) * 60)));
+const pollSeconds = Math.max(60, Number(process.env.HUNT_POLL_SECONDS || (Number(process.env.HUNT_INTERVAL_MINUTES || (platform.name === 'upwork' ? 12 : 15)) * 60)));
 const forceProposal = process.env.AUTO_FORCE_PROPOSAL === 'true';
 const maxProposalsPerClient = Math.max(1, Number(process.env.MAX_PROPOSALS_PER_CLIENT_24H || 1));
 const maxMessagesPerClient = Math.max(1, Number(process.env.MAX_MESSAGES_PER_CLIENT_24H || 1));
+const autoMessageOnProposalLimit = process.env.AUTO_MESSAGE_ON_LIMIT !== 'false';
 const maxIdleCycles = Math.max(0, Number(process.env.STOP_AFTER_IDLE_CYCLES || 0));
 const premium = /premium|projeto exclusivo|bandeira dourada|selo dourado|assinar|assinatura|turbinar/i;
+
+async function ensureAccess(page) {
+  if (platform.name === 'upwork') {
+    const selected = await selectUpworkGoogleAccount(page, selectors.auth, process.env.UPWORK_GOOGLE_ACCOUNT_LABEL || 'Lucas');
+    if (!selected && /accounts\.google\.com/i.test(page.url())) {
+      await ask('A conta Lucas não foi identificada automaticamente. Selecione Lucas manualmente e pressione Enter: ');
+    }
+  }
+  await waitForManualAccess(page, platform.name, ask);
+}
 
 function generate(snapshot) {
   const result = spawnSync('python', ['scripts/generate_proposal.py'], {
@@ -63,26 +77,38 @@ function conversationIdFromUrl(value) {
   return match ? match[1] : undefined;
 }
 
-function brl(value) {
-  return `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function money(value, currency = 'BRL') {
+  const amount = Number(value).toLocaleString(currency === 'BRL' ? 'pt-BR' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency === 'USD' ? `$${amount}` : currency === 'EUR' ? `€${amount}` : currency === 'GBP' ? `£${amount}` : `R$ ${amount}`;
 }
 
-function forceProposalDraft(draft) {
+function forceProposalDraft(draft, snapshot) {
   if (!forceProposal || draft.action !== 'question' || !Array.isArray(draft.price_range) || !draft.price_range[1]) return draft;
   const scope = (draft.breakdown || []).slice(0, 5).map((item) => item.deliverable).join('; ') || 'desenvolvimento, testes e entrega documentada';
-  const days = Array.isArray(draft.days_range) && draft.days_range[1] ? draft.days_range[1] : null;
+  const days = Array.isArray(draft.days_range) && draft.days_range[1]
+    ? Math.ceil((draft.days_range[0] + draft.days_range[1]) / 2) : null;
+  const price = Array.isArray(draft.price_range) && draft.price_range[1]
+    ? Math.ceil(((draft.price_range[0] + draft.price_range[1]) / 2) / 50) * 50 : null;
+  if (price == null) return draft;
   if (!days) return draft;
   const title = String(draft.subject || '').replace(/^Proposta:\s*/i, '');
   draft.action = 'proposal';
   draft.questions = [];
-  draft.suggested_price = draft.price_range[1];
+  draft.suggested_price = price;
   draft.estimated_days = days;
-  draft.message = `Olá! Temos interesse no projeto “${title}”. Entendemos que a entrega envolve ${scope}. `
-    + 'Somos uma equipe de dois desenvolvedores full stack que trabalham juntos. '
-    + 'Propomos executar em etapas verificáveis, com alinhamento, implementação, testes e entrega documentada. '
-    + `Como referência inicial, propomos ${brl(draft.suggested_price)} e prazo de até ${days} dias corridos. `
-    + 'O preço pode ser negociado conforme os detalhes finais do escopo e as prioridades do projeto. '
-    + 'APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.';
+  const english = String(snapshot?.platform || '').toLowerCase() === 'upwork';
+  draft.message = english
+    ? `Hi! We are interested in the project "${title}". We understand the delivery includes ${scope}. `
+      + 'We are a two-developer full-stack team working together, with cross-review across frontend and backend. '
+      + 'We propose verifiable milestones covering implementation, testing, and documented handoff. '
+      + `As an initial estimate, we propose ${money(draft.suggested_price, snapshot?.currency)} and up to ${days} calendar days. `
+      + 'The price is negotiable after the final scope and priorities are confirmed. Paid APIs, hosting, domains, and services remain in the client account.'
+    : `Olá! Temos interesse no projeto “${title}”. Entendemos que a entrega envolve ${scope}. `
+      + 'Somos uma equipe de dois desenvolvedores full stack que trabalham juntos. '
+      + 'Propomos executar em etapas verificáveis, com alinhamento, implementação, testes e entrega documentada. '
+      + `Como referência inicial, propomos ${money(draft.suggested_price)} e prazo de até ${days} dias corridos. `
+      + 'O preço pode ser negociado conforme os detalhes finais do escopo e as prioridades do projeto. '
+      + 'APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.';
   draft.validation_status = 'PENDING';
   draft.validation_reasons = ['Estimativa automática preliminar; confirmar escopo com o cliente.'];
   return draft;
@@ -103,6 +129,23 @@ function messageGate(clientKey) {
   return JSON.parse(result.stdout.trim().split('\n').pop());
 }
 
+function proposalGate() {
+  const result = spawnSync('python', ['scripts/proposal_tracking.py', 'gate',
+    '--max-per-hour', process.env.MAX_PROPOSALS_PER_HOUR || '3',
+    '--max-per-day', process.env.MAX_PROPOSALS_PER_DAY || '10',
+    '--no-response-days', process.env.PAUSE_NO_RESPONSE_DAYS || '7',
+    '--consecutive-no-response', process.env.PAUSE_CONSECUTIVE_NO_RESPONSE || '5',
+    '--rejection-threshold', process.env.PAUSE_REJECTION_THRESHOLD || '0.6'], {
+    cwd: root, encoding: 'utf8',
+  });
+  const raw = result.stdout?.trim().split('\n').pop();
+  try {
+    return JSON.parse(raw || '{}');
+  } catch {
+    return { allowed: false, reason: result.stderr || 'falha na trava de propostas' };
+  }
+}
+
 function clientContext(clientKey) {
   if (!clientKey) return [];
   const result = spawnSync('python', ['scripts/proposal_tracking.py', 'context', '--client-key', clientKey], { cwd: root, encoding: 'utf8' });
@@ -111,11 +154,34 @@ function clientContext(clientKey) {
 }
 
 function claimSend(proposalId) {
-  const result = spawnSync('python', ['scripts/proposal_tracking.py', 'claim', '--proposal-id', String(proposalId)], {
+  const result = spawnSync('python', ['scripts/proposal_tracking.py', 'claim', '--proposal-id', String(proposalId),
+    '--max-per-client', String(maxProposalsPerClient)], {
     cwd: root, encoding: 'utf8',
   });
   if (result.status !== 0) return false;
   return JSON.parse(result.stdout.trim().split('\n').pop()).claimed === true;
+}
+
+async function prepareFallbackMessage(page, jobUrl, draft) {
+  const message = draft.fallback_message || draft.question;
+  if (!message) return null;
+  await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const questionLink = await firstLocator(page, selectors.proposal.question_link);
+  if (questionLink) {
+    const href = await questionLink.getAttribute('href');
+    await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded' });
+  }
+  const messagePageUrl = page.url();
+  const question = await visibleLocator(page, selectors.proposal.question);
+  if (!question) return null;
+  const existing = await alreadyContacted(page, messagePageUrl, {
+    subject: draft.subject,
+    question: message,
+  });
+  if (existing) return { skipped: 'O cliente já recebeu contato para esta vaga; mensagem fallback bloqueada.' };
+  await question.fill(message);
+  await humanPause();
+  return { messagePageUrl, message };
 }
 
 async function notifyPause(reason) {
@@ -164,24 +230,33 @@ async function verifyQuestion(page, messagePageUrl, expected) {
   const messages = await conversationMessages(page, messagePageUrl);
   const wanted = String(expected || '').replace(/\s+/g, ' ').trim();
   if (messages?.some((message) => String(message).replace(/\s+/g, ' ').trim().includes(wanted))) return true;
-  await page.goto('https://www.99freelas.com.br/messages/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(platform.inbox_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await ensureAccess(page);
   const inboxText = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
   return wanted.length > 40 && inboxText.includes(wanted.slice(0, 80));
 }
 
 async function fillJob(page, link) {
   await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await ensureAccess(page);
+  if (platform.name === 'upwork') {
+    await page.waitForTimeout(Math.max(1000, Number(process.env.JOB_RENDER_WAIT_MS || 3000)));
+    await ensureAccess(page);
+  }
   let snapshot;
-  try { snapshot = await readSnapshot(page); }
-  catch (error) { return { skipped: error.message }; }
+  try { snapshot = await readSnapshot(page, selectors, platform.name); }
+  catch (error) { return { skipped: `${error.message} (${await page.title().catch(() => '')})` }; }
   snapshot.client_key = snapshot.client_url || snapshot.client;
   snapshot.client_history = clientHistory(snapshot.client_key);
   snapshot.confirmed_context = clientContext(snapshot.client_key);
-  const draft = forceProposalDraft(generate(snapshot));
+  const draft = forceProposalDraft(generate(snapshot), snapshot);
   if (draft.action === 'skip') return { skipped: draft.reason };
   console.log(JSON.stringify({ tasks: draft.breakdown, price_range: draft.price_range,
     client_total_range: draft.client_total_range, days_range: draft.days_range,
     questions: draft.questions, commercial_reference: draft.knowledge }, null, 2));
+  if (!platform.allow_submission) {
+    return { kind: draft.action === 'question' ? 'question' : 'proposal', draft, snapshot, jobUrl: link };
+  }
   if (draft.action === 'question') {
     const questionLink = await firstLocator(page, selectors.proposal.question_link);
     if (questionLink) {
@@ -199,7 +274,15 @@ async function fillJob(page, link) {
     }
     await question.fill(draft.question);
     await humanPause();
-    return { kind: 'question', draft, messagePageUrl, snapshot };
+    return { kind: 'question', draft, messagePageUrl, snapshot, jobUrl: link };
+  }
+  const priorConversationLink = await firstLocator(page, selectors.proposal.question_link);
+  if (priorConversationLink) {
+    const href = await priorConversationLink.getAttribute('href');
+    const priorMessagesUrl = new URL(href, page.url()).href;
+    if (await alreadyContacted(page, priorMessagesUrl, draft)) {
+      return { skipped: 'Já existe contato deste bot com o cliente para esta vaga; novo envio bloqueado.' };
+    }
   }
   const bidLink = await firstLocator(page, selectors.proposal.bid_link);
   if (!bidLink) {
@@ -219,13 +302,13 @@ async function fillJob(page, link) {
     if (finalPrice && draft.suggested_price != null) await finalPrice.blur();
     await proposalBox.fill(draft.message);
     await humanPause();
-    return { kind: 'proposal', draft, snapshot };
+    return { kind: 'proposal', draft, snapshot, jobUrl: link };
   }
   const question = await visibleLocator(page, selectors.proposal.question);
   if (question) {
     await question.fill(draft.question);
     await humanPause();
-    return { kind: 'question', draft, messagePageUrl: page.url(), snapshot };
+    return { kind: 'question', draft, messagePageUrl: page.url(), snapshot, jobUrl: link };
   }
   return { skipped: 'form not found' };
 }
@@ -250,6 +333,7 @@ async function main() {
     let idleCycles = 0;
     while (true) {
     await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await ensureAccess(page);
     if (firstCycle && process.env.AUTO_LOGIN_PROMPT !== 'false' && !autoSend) await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
     const links = targetJobUrl ? [{ href: targetJobUrl, text: targetJobUrl }] : await (async () => {
       const collected = [];
@@ -259,14 +343,23 @@ async function main() {
       }
       const seen = new Set();
       return collected.filter(({ href, text }) => {
-        if (!/\/project\/[^/?#]+-\d+/i.test(href) || !text.trim() || seen.has(href)) return false;
+        if (!new RegExp(platform.job_link_pattern, 'i').test(new URL(href, page.url()).pathname) || !text.trim() || seen.has(href)) return false;
         seen.add(href); return true;
       });
     })();
+    if (!links.length && await isAccessChallenge(page)) {
+      await ensureAccess(page);
+      continue;
+    }
+    if (!links.length) {
+      console.log(JSON.stringify({ event: 'no_job_links', platform: platform.name, url: page.url(), title: await page.title().catch(() => '') }));
+    }
     let processed = 0;
+    let inspected = 0;
     let cycleSent = 0;
     for (const item of links) {
-    if (processed >= maxJobs) break;
+    if (inspected >= maxJobs) break;
+    inspected += 1;
     if (premium.test(item.text)) continue;
     const jobPage = await context.newPage();
     await jobPage.bringToFront();
@@ -278,48 +371,91 @@ async function main() {
       console.log(`IGNORADA: proposta não passou validação — ${(result.draft.validation_reasons || []).join('; ')}`);
       continue;
     }
+    if (!result.snapshot.client_key) {
+      console.log(`AVISO: identificador do cliente não localizado; proteção aplicada pela chave da vaga — ${item.href}`);
+    }
     console.log(`${result.kind.toUpperCase()} preenchida: ${result.draft.subject || item.href}`);
-    console.log(`Valor sugerido: R$ ${result.draft.suggested_price ?? 'a combinar'} | prazo: ${result.draft.estimated_days} dias`);
-    console.log(`Texto preparado:\n${result.kind === 'question' ? result.draft.question : result.draft.message}`);
+    const displayedPrice = result.draft.suggested_price ?? result.draft.fallback_price;
+    const displayedMessage = result.kind === 'question'
+      ? (displayedPrice != null ? result.draft.fallback_message : result.draft.question)
+      : result.draft.message;
+    console.log(`Valor sugerido: ${displayedPrice != null ? money(displayedPrice, result.snapshot.currency) : 'a combinar'} | prazo: ${result.draft.estimated_days ?? 'a confirmar'} dias`);
+    console.log(`Texto preparado:\n${displayedMessage}`);
     const clientGate = tracking('client-gate', {
       client_key: result.snapshot.client_key,
       max_per_day: maxProposalsPerClient,
     });
-    const messageOnClientLimit = process.env.AUTO_MESSAGE_ON_LIMIT === 'true'
-      && result.kind === 'question' && !clientGate.allowed;
-    const messageGateResult = messageOnClientLimit ? messageGate(result.snapshot.client_key) : { allowed: true };
     if (!clientGate.allowed) {
-      if (!messageOnClientLimit || !messageGateResult.allowed) {
-        const reason = messageOnClientLimit ? messageGateResult.reason : clientGate.reason;
-        console.log(`IGNORADA: ${reason} — ${item.href}`);
+      console.log(`IGNORADA: ${clientGate.reason}; nenhum segundo contato será enviado — ${item.href}`);
+      continue;
+    }
+    let sendKind = result.kind === 'question' ? 'message' : 'proposal';
+    let sendMessage = result.kind === 'question'
+      ? (result.draft.fallback_price != null ? result.draft.fallback_message : result.draft.question)
+      : result.draft.message;
+    let sendPrice = result.kind === 'question' ? result.draft.fallback_price : result.draft.suggested_price;
+    let sendPageUrl = result.messagePageUrl;
+    let fallbackFromProposalLimit = false;
+    if (sendKind === 'message' && result.kind === 'question' && sendMessage !== result.draft.question) {
+      const question = await visibleLocator(jobPage, selectors.proposal.question);
+      if (question) await question.fill(sendMessage);
+      await humanPause();
+    }
+    if (sendKind === 'proposal') {
+      const gate = proposalGate();
+      if (!gate.allowed) {
+        if (!autoMessageOnProposalLimit) {
+          console.log(`IGNORADA: ${gate.reason || 'limite de propostas atingido'} — mensagem fallback desativada.`);
+          continue;
+        }
+        if (!/limite (horário|diário)/i.test(gate.reason || '')) {
+          console.log(`PAUSADA: ${gate.reason || 'trava de propostas'}`);
+          try { await notifyPause(gate.reason || 'trava de propostas'); } catch (error) { console.log(`Falha ao avisar pausa: ${error.message}`); }
+          continue;
+        }
+        const fallback = await prepareFallbackMessage(jobPage, result.jobUrl, result.draft);
+        if (!fallback || fallback.skipped) {
+          console.log(`IGNORADA: ${fallback?.skipped || 'formulário de mensagens não localizado'} — ${item.href}`);
+          continue;
+        }
+        const fallbackGate = messageGate(result.snapshot.client_key);
+        if (!fallbackGate.allowed) {
+          console.log(`IGNORADA: ${fallbackGate.reason}; mensagem não será repetida — ${item.href}`);
+          continue;
+        }
+        sendKind = 'message';
+        sendMessage = fallback.message;
+        sendPrice = result.draft.fallback_price;
+        sendPageUrl = fallback.messagePageUrl;
+        fallbackFromProposalLimit = true;
+        console.log(`LIMITE DE PROPOSTAS: enviando mensagem com estimativa negociável — ${item.href}`);
+      }
+    } else {
+      const messageGateResult = messageGate(result.snapshot.client_key);
+      if (!messageGateResult.allowed) {
+        console.log(`IGNORADA: ${messageGateResult.reason}; mensagem não será repetida — ${item.href}`);
         continue;
       }
-      console.log(`LIMITE DE PROPOSTAS: tentando enviar mensagem ao cliente — ${item.href}`);
     }
     const tracked = tracking('register', {
       url: result.snapshot.url, title: result.snapshot.title, subject: result.draft.subject,
-      message: result.kind === 'question' ? result.draft.question : result.draft.message,
-      price: result.draft.suggested_price, project_type: result.snapshot.category || result.snapshot.title,
+      message: sendMessage, price: sendPrice, send_kind: sendKind,
+      project_type: result.snapshot.category || result.snapshot.title,
       client_key: result.snapshot.client_url || result.snapshot.client,
       validation_status: result.draft.validation_status || 'PENDING',
     });
     if (tracked.already_sent) {
-      console.log(`IGNORADA: proposta já enviada anteriormente — ${item.href}`);
+      console.log(`IGNORADA: este cliente/vaga já foi enviado anteriormente — ${item.href}`);
       continue;
     }
     processed += 1;
+    if (!platform.allow_submission) {
+      console.log(`RASCUNHO PREPARADO para ${platform.name}; envio externo permanece desativado até validação dos seletores e da política da plataforma.`);
+      continue;
+    }
     const answer = autoSend ? 'ENVIAR' : await ask('Digite ENVIAR para clicar no envio desta vaga, ou Enter para deixar como rascunho: ');
     if (answer.trim() === 'ENVIAR') {
-    if (!messageOnClientLimit) {
-      const gate = spawnSync('python', ['scripts/proposal_tracking.py', 'gate', '--max-per-hour', process.env.MAX_PROPOSALS_PER_HOUR || '3', '--max-per-day', process.env.MAX_PROPOSALS_PER_DAY || '10', '--no-response-days', process.env.PAUSE_NO_RESPONSE_DAYS || '7', '--consecutive-no-response', process.env.PAUSE_CONSECUTIVE_NO_RESPONSE || '5', '--rejection-threshold', process.env.PAUSE_REJECTION_THRESHOLD || '0.6'], { cwd: root, encoding: 'utf8' });
-      if (gate.status !== 0) {
-        const reason = gate.stdout?.trim().split('\n').pop() || gate.stderr;
-        console.log(`PAUSADA: ${reason}`);
-        try { await notifyPause(reason); } catch (error) { console.log(`Falha ao avisar pausa: ${error.message}`); }
-        continue;
-      }
-    }
-      const submit = await visibleLocator(jobPage, result.kind === 'question' ? selectors.proposal.submit_question : selectors.proposal.submit_proposal);
+      const submit = await visibleLocator(jobPage, sendKind === 'message' ? selectors.proposal.submit_question : selectors.proposal.submit_proposal);
       for (const selector of selectors.proposal.confirmations) {
         const checkbox = jobPage.locator(selector).first();
         if (await checkbox.count() && await checkbox.isVisible() && !await checkbox.isChecked()) await checkbox.check();
@@ -338,12 +474,12 @@ async function main() {
         const response = await responsePromise;
         await jobPage.waitForLoadState('domcontentloaded').catch(() => {});
         if (response && !response.ok()) throw new Error(`Envio recusado pelo site (HTTP ${response.status()}).`);
-        if (result.kind === 'question') {
-          const confirmed = await verifyQuestion(jobPage, result.messagePageUrl, result.draft.question);
+        if (sendKind === 'message') {
+          const confirmed = await verifyQuestion(jobPage, sendPageUrl, sendMessage);
           if (!confirmed) throw new Error('O site não confirmou a mensagem na conversa; envio não será repetido automaticamente.');
           markSent(tracked.proposal_id, `question-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
           cycleSent += 1;
-          console.log(`${messageOnClientLimit ? 'MENSAGEM' : 'ENVIO'} CONFIRMADO na conversa: ${jobPage.url()}`);
+          console.log(`${fallbackFromProposalLimit ? 'MENSAGEM FALLBACK' : 'MENSAGEM'} CONFIRMADA na conversa: ${jobPage.url()}`);
         } else if (response?.ok()) {
           markSent(tracked.proposal_id, `proposal-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
           cycleSent += 1;
@@ -361,7 +497,7 @@ async function main() {
     }
     }
     idleCycles = cycleSent === 0 ? idleCycles + 1 : 0;
-    console.log(`Ciclo concluído: ${processed} vaga(s), ${cycleSent} envio(s). Chromium permanece aberto.`);
+    console.log(`Ciclo concluído: ${inspected} vaga(s) inspecionada(s), ${cycleSent} envio(s). Chromium permanece aberto.`);
     if (runForever && maxIdleCycles > 0 && idleCycles >= maxIdleCycles) {
       console.log(`Caça encerrada após ${idleCycles} ciclo(s) sem envio para economizar créditos.`);
       break;

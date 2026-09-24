@@ -1,0 +1,44 @@
+{
+  "auth": {
+    "google_button": ["button:has-text('Continue with Google')", "button:has-text('Google')", "a:has-text('Google')"],
+    "google_account": ["[data-identifier]", "[role='link']", "[role='button']", "li"]
+  },
+  "listing": {
+    "links": ["a[href*='/jobs/']", "[data-test*='job-tile'] a[href*='/jobs/']"]
+  },
+  "job": {
+    "title": ["[data-test='job-title']", "h1"],
+    "description": ["[data-test='Description']", "[data-test='job-description']", "[data-cy='job-description']", "article"],
+    "premium_badge": ["[data-test*='featured']", "[data-test*='boost']"],
+    "budget": ["[data-test='budget']", "[data-test*='budget']"],
+    "deadline": ["[data-test='duration']", "[data-test*='duration']"],
+    "client": ["[data-test='client-name']", "[data-test*='client-name']"],
+    "client_link": ["a[href*='/clients/']", "a[href*='/client/']"]
+  },
+  "proposal": {
+    "question_link": [],
+    "bid_link": [],
+    "message": ["textarea[name*='message']", "textarea"],
+    "subject": [],
+    "price": ["input[name*='amount']", "input[type='number']"],
+    "final_price": [],
+    "duration": ["input[name*='duration']"],
+    "question": ["textarea[name*='message']", "textarea"],
+    "submit_question": [],
+    "submit_proposal": [],
+    "confirmations": [],
+    "continue_modal": []
+  },
+  "conversation": {
+    "link": ["a[href*='/ab/messages/rooms/']"],
+    "message": ["[data-test*='message']", "[data-cy*='message']"]
+  },
+  "inbox": {
+    "row": ["[data-test*='conversation']", "[data-cy*='conversation']"],
+    "timestamp": ["time", "[data-test*='timestamp']"],
+    "project": ["[data-test*='project']", "[data-cy*='project']"],
+    "client": ["[data-test*='user']", "[data-cy*='user']"],
+    "preview": ["[data-test*='preview']", "[data-cy*='preview']"],
+    "sent": ["[data-test*='sent']", "[data-cy*='sent']"]
+  }
+}

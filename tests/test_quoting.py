@@ -178,6 +178,42 @@ def test_unknown_work_cannot_get_invented_quote():
     assert result['action'] == 'question'
 
 
+def test_upwork_profile_generates_english_pair_copy_in_usd():
+    profile = ProfileService('config/upwork_profile.yaml').load()
+    result = build_quote({
+        'platform': 'upwork',
+        'currency': 'USD',
+        'title': 'Responsive landing page',
+        'description': 'Build a responsive landing page with the approved layout, final copy and images. '
+                       'The delivery includes HTML and CSS, deployment to the client hosting, and one visual review '
+                       'against desktop and mobile acceptance criteria. The client will provide hosting access, '
+                       'brand assets, final content, and a clear approval contact for the milestone.',
+    }, profile)
+
+    assert result['action'] == 'proposal'
+    assert result['currency'] == 'USD'
+    assert result['subject'].startswith('Proposal:')
+    assert 'two-developer full-stack team' in result['message']
+    assert 'the price is negotiable' in result['message'].lower()
+    assert '$' in result['message']
+    assert 'R$' not in result['message']
+
+
+def test_upwork_quote_uses_detected_euro_currency_override():
+    profile = ProfileService('config/upwork_profile.yaml').load()
+    result = build_quote({
+        'platform': 'upwork',
+        'budget_text': '€1,000–€3,000',
+        'title': 'Responsive landing page',
+        'description': 'Build a responsive landing page with the approved layout, final copy and images. '
+                       'The delivery includes HTML and CSS, deployment, and one visual review against acceptance criteria. '
+                       'The client will provide hosting access, brand assets, final content, and a clear approval contact.',
+    }, profile)
+
+    assert result['currency'] == 'EUR'
+    assert '€' in result['message']
+
+
 def test_plural_landing_pages_require_quantity_and_assets():
     result = quote('Desenvolvimento de landing pages',
                    'Criar landing pages profissionais para três nichos diferentes, com SEO e CTA.')

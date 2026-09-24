@@ -19,7 +19,7 @@ def load_commercial_knowledge(path=None):
 def commercial_advisories(snapshot, settings, estimated_hours, suggested_price, path=None):
     knowledge = load_commercial_knowledge(path)
     notes = []
-    if estimated_hours and suggested_price:
+    if estimated_hours and suggested_price and str(settings.get('currency', 'BRL')).upper() == 'BRL':
         implicit_rate = suggested_price / estimated_hours
         low, high = knowledge['pricing']['hourly_reference_brl']['general_developer']
         if implicit_rate < low:
@@ -42,4 +42,5 @@ def commercial_advisories(snapshot, settings, estimated_hours, suggested_price, 
         'risk_ids': risk_ids,
         'notes': notes,
         'internal_hourly_rate': settings['hourly_rate'],
+        'currency': settings.get('currency', 'BRL'),
     }
