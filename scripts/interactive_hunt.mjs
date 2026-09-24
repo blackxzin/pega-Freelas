@@ -85,12 +85,16 @@ function money(value, currency = 'BRL') {
 function forceProposalDraft(draft, snapshot) {
   if (!forceProposal || draft.action !== 'question' || !Array.isArray(draft.price_range) || !draft.price_range[1]) return draft;
   const scope = (draft.breakdown || []).slice(0, 5).map((item) => item.deliverable).join('; ') || 'desenvolvimento, testes e entrega documentada';
-  const days = Array.isArray(draft.days_range) && draft.days_range[1] ? draft.days_range[1] : null;
+  const days = Array.isArray(draft.days_range) && draft.days_range[1]
+    ? Math.ceil((draft.days_range[0] + draft.days_range[1]) / 2) : null;
+  const price = Array.isArray(draft.price_range) && draft.price_range[1]
+    ? Math.ceil(((draft.price_range[0] + draft.price_range[1]) / 2) / 50) * 50 : null;
+  if (price == null) return draft;
   if (!days) return draft;
   const title = String(draft.subject || '').replace(/^Proposta:\s*/i, '');
   draft.action = 'proposal';
   draft.questions = [];
-  draft.suggested_price = draft.price_range[1];
+  draft.suggested_price = price;
   draft.estimated_days = days;
   const english = String(snapshot?.platform || '').toLowerCase() === 'upwork';
   draft.message = english

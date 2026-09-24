@@ -208,6 +208,14 @@ def build_quote(snapshot, profile, settings=None):
     days = ([math.ceil((math.ceil(h / settings['productive_team_hours_per_day']) +
                        settings['feedback_business_days']) * 7 / 5) for h in (low, high)]
             if low is not None else None)
+    # Use the middle of the calculated range as the client-facing starting
+    # point. The upper bound remains available internally for planning, but
+    # presenting it for every lead makes a preliminary estimate look like a
+    # deliberately high fixed bid.
+    initial_price = (min(price_ceiling, max(price_floor,
+                     math.ceil(((prices[0] + prices[1]) / 2) / 50) * 50))
+                     if prices else None)
+    initial_days = math.ceil((days[0] + days[1]) / 2) if days else None
     totals = [round(p / (1 - settings['fee_fraction']), 2) for p in prices] if prices else None
     budget = snapshot.get('budget_max')
     if isinstance(budget, (int, float)) and totals and budget < totals[0]:
@@ -215,7 +223,7 @@ def build_quote(snapshot, profile, settings=None):
     deadline = snapshot.get('deadline_days')
     if isinstance(deadline, (int, float)) and days and deadline < days[1]:
         questions.append('Is there flexibility in the deadline, or should we prioritize a smaller first delivery?' if english else 'Há flexibilidade no prazo ou podemos priorizar uma entrega menor?')
-    advisory = commercial_advisories(snapshot, settings, high, prices[1] if prices else None)
+    advisory = commercial_advisories(snapshot, settings, high, initial_price)
     if 'off_platform_contact' in advisory['risk_ids']:
         return dict(action='skip', reason='Pedido de contato fora da plataforma exige revisão manual.',
                     suggested_price=None, estimated_days=None, questions=[], breakdown=tasks,
@@ -257,13 +265,13 @@ def build_quote(snapshot, profile, settings=None):
                    'Nossa proposta cobre desenvolvimento e configuração; APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.')
     if action == 'proposal':
         if english:
-            message += (f' As an initial proposal for this scope, we estimate {format_money(prices[1], currency)} and up to '
-                        f'{days[1]} calendar days, including testing and one revision round. This is an initial estimate; '
+            message += (f' As an initial proposal for this scope, we estimate {format_money(initial_price, currency)} and up to '
+                        f'{initial_days} calendar days, including testing and one revision round. This is an initial estimate; '
                         'the price is negotiable based on the final details, scope, and priorities. '
                         'We can align the milestones and adjust the proposal here on Upwork.')
         else:
-            message += (f' Como proposta inicial para esse escopo, indicamos {format_brl(prices[1])} e prazo de até '
-                        f'{days[1]} dias corridos, incluindo testes e uma rodada de revisão. Esse é um valor de '
+            message += (f' Como proposta inicial para esse escopo, indicamos {format_brl(initial_price)} e prazo de até '
+                        f'{initial_days} dias corridos, incluindo testes e uma rodada de revisão. Esse é um valor de '
                         'referência. O valor pode ser combinado e o preço pode ser negociado conforme os detalhes finais, '
                         'o escopo e as prioridades '
                         'do projeto. Se fizer sentido, podemos alinhar as etapas e ajustar a proposta aqui pela plataforma.')
@@ -271,14 +279,14 @@ def build_quote(snapshot, profile, settings=None):
     if prices:
         if english:
             fallback_message = (opening + f' Based on the described service, we would initially scope {fallback_scope}. '
-                                f'Our preliminary estimate is {format_money(prices[1], currency)}, with up to {days[1]} calendar days. '
+                                f'Our preliminary estimate is {format_money(initial_price, currency)}, with up to {initial_days} calendar days. '
                                 'The price is negotiable after confirming the final details, priorities, and acceptance criteria. '
                                 'We can split the work into verifiable milestones with implementation, testing, and documentation. '
                                 'Paid APIs, hosting, domains, and services remain in the client account.')
         else:
             fallback_message = (opening + f' Pelo serviço descrito, consideramos inicialmente {fallback_scope}. '
-                                f'Com base nessas entregas, nossa estimativa preliminar é de {format_brl(prices[1])}, '
-                                f'com prazo de até {days[1]} dias corridos. O preço pode ser negociado conforme os '
+                                f'Com base nessas entregas, nossa estimativa preliminar é de {format_brl(initial_price)}, '
+                                f'com prazo de até {initial_days} dias corridos. O preço pode ser negociado conforme os '
                                 'detalhes finais, prioridades e critérios de aceite; depois de confirmar o escopo, '
                                 'ajustamos a proposta. Somos flexíveis para dividir a entrega em etapas verificáveis, '
                                 'com implementação, testes e documentação. APIs, hospedagem, domínio e serviços pagos '
@@ -295,9 +303,9 @@ def build_quote(snapshot, profile, settings=None):
                                 'e podemos organizar a entrega em etapas verificáveis com implementação, testes e '
                                 'documentação. APIs, hospedagem, domínio e serviços pagos ficam nas contas do cliente.')
     return dict(action=action, subject=f'Proposal: {title}' if english else f'Proposta: {title}', message=message, question=question,
-                suggested_price=prices[1] if prices and action == 'proposal' else None,
-                fallback_message=fallback_message, fallback_price=prices[1] if prices else None,
-                estimated_days=days[1] if days and action == 'proposal' else None,
+                suggested_price=initial_price if prices and action == 'proposal' else None,
+                fallback_message=fallback_message, fallback_price=initial_price,
+                estimated_days=initial_days,
                 estimated_hours=high, hours_range=[low, high], price_range=prices,
                 client_total_range=totals, days_range=days, questions=questions, breakdown=tasks,
                 assumptions=settings, knowledge=advisory,

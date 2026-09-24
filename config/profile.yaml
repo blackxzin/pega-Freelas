@@ -1,5 +1,5 @@
 name: FreelaHunter User
-headline: Full-Stack Developer | Python, FastAPI, APIs & Automation
+headline: Two-Developer Full-Stack Team | Python, FastAPI, APIs & Automation
 bio: >-
   We are a two-developer full-stack team focused on building practical web
   systems, REST APIs, workflow automations and third-party integrations. We
@@ -46,7 +46,7 @@ portfolio:
     technologies: [JavaScript, Playwright, SQLite, Testing, Git]
 team_description: equipe de dois desenvolvedores full stack
 client_pays_paid_services: true
-preferred_jobs: [Python, FastAPI, API, automação, integração, backend, frontend, sistema web, SaaS, n8n, landing page, site]
+preferred_jobs: [Python, FastAPI, API, automação, integração, backend, frontend, sistema web, desenvolvimento web, software, SaaS, n8n, landing page, site, dashboard, painel, manutenção, correção de bugs, MVP]
 excluded_jobs: [Premium, Projeto Exclusivo, bandeira dourada, selo dourado, apostas, Betano, Estrela Bet, disparo em massa, LoRA, ComfyUI]
 minimum_budget: 500
 languages: [Português]

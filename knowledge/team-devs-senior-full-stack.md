@@ -1,18 +1,18 @@
 ---
-title: Senior Full-Stack Developer Pair — Proposal Knowledge Base
+title: Two-Developer Full-Stack Pair — Proposal Knowledge Base
 status: needs-real-data
 source: user-provided
 topics: [profile, proposals, upwork, 99freelas, international, safety]
 ---
 
-# Senior Full-Stack Developer Pair
+# Two-Developer Full-Stack Pair
 
 This is the canonical proposal context for the bot. It is intentionally kept
 separate from pricing and platform selectors.
 
 ## Identity and positioning
 
-- Team: two senior full-stack developers working as a partnership, not a large
+- Team: two full-stack developers working as a partnership, not a large
   agency and not a solo freelancer.
 - Present the pair clearly from the first proposal.
 - Emphasize parallel frontend/backend work, cross-review, fewer bugs, and
@@ -85,4 +85,3 @@ above are not evidence and must never be copied into a client proposal.
 - [Three to five real projects with measurable outcomes]
 - [Final hourly ranges and minimum project values]
 - [Answers to payment model, free-trial, and delivery-time questions]
-
