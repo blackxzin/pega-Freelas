@@ -39,10 +39,11 @@ def load_platforms(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Platfo
     """Load the supported platform metadata used by the operator panel."""
     raw = json.loads(Path(config_path).read_text(encoding="utf-8"))
     runtimes: dict[str, PlatformRuntime] = {}
-    labels = {"99freelas": "99Freelas", "upwork": "Upwork"}
+    labels = {"99freelas": "99Freelas", "upwork": "Upwork", "workana": "Workana"}
     defaults = {
         "99freelas": (5, 15),
         "upwork": (2, 12),
+        "workana": (5, 15),
     }
     for name, config in raw.items():
         if name not in defaults:
@@ -65,17 +66,29 @@ def load_platforms(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Platfo
 
 
 def hunter_environment(platform: PlatformRuntime, base: dict[str, str] | None = None) -> dict[str, str]:
-    """Return a safe environment for one platform hunter."""
-    env = dict(base or os.environ)
+    """Return the configured environment for one platform hunter.
+
+    The panel remains safe by default. Set PANEL_AUTOMATION_MODE=AUTO in the
+    panel process to opt into continuous external submission on platforms that
+    explicitly allow it.
+    """
+    env = dict(os.environ if base is None else base)
+    for key in ("JOBS_URL", "TARGET_JOB_URL", "HUNT_POLL_SECONDS"):
+        env.pop(key, None)
+    requested_mode = str(env.get("PANEL_AUTOMATION_MODE", "SEMI_AUTO")).upper()
+    if requested_mode not in {"AUTO", "SEMI_AUTO"}:
+        raise ValueError("PANEL_AUTOMATION_MODE deve ser AUTO ou SEMI_AUTO")
+    automatic = requested_mode == "AUTO" and platform.allow_submission
     env.update({
         "PLATFORM": platform.name,
         "MAX_JOBS": str(platform.max_jobs),
-        "HUNT_INTERVAL_MINUTES": str(platform.interval_minutes),
+        "HUNT_INTERVAL_MINUTES": "0" if automatic else str(platform.interval_minutes),
         "RUN_FOREVER": "true",
-        "AUTO_SEND": "false",
-        "DRY_RUN": "true",
-        "AUTOMATION_MODE": "SEMI_AUTO",
-        "AUTO_LOGIN_PROMPT": "true",
+        "AUTO_SEND": "true" if automatic else "false",
+        "DRY_RUN": "false" if automatic else "true",
+        "AUTO_SEND_KILL_SWITCH": "false" if automatic else "true",
+        "AUTOMATION_MODE": "AUTO" if automatic else "SEMI_AUTO",
+        "AUTO_LOGIN_PROMPT": "false" if automatic else "true",
     })
     return env
 
@@ -197,14 +210,23 @@ class HunterProcessManager:
 
 
 def _page(platforms: dict[str, PlatformRuntime]) -> str:
+    panel_automatic = str(os.environ.get("PANEL_AUTOMATION_MODE", "SEMI_AUTO")).upper() == "AUTO"
+    submission_label = "automático" if panel_automatic else "manual"
+    submission_note = (
+        "o envio externo usa o modo AUTO e continua sujeito às travas de cliente, limite e pausa."
+        if panel_automatic
+        else "o envio de propostas não é automático."
+    )
     cards = []
     for platform in platforms.values():
         if platform.name == "upwork":
             description = "Jobs internacionais · propostas em inglês · moeda da vaga"
+        elif platform.name == "workana":
+            description = "TI e programação · projetos em português · rascunhos locais"
         else:
             description = "Jobs brasileiros · propostas em português · valores em reais"
         badge = "INTERNACIONAL" if platform.name == "upwork" else "BRASIL"
-        mark = "U" if platform.name == "upwork" else "99"
+        mark = {"upwork": "U", "workana": "W", "99freelas": "99"}.get(platform.name, "?")
         cards.append(
             f'''<button class="platform" data-platform="{platform.name}" data-label="{platform.label}"
               data-description="{description}" data-rules="{platform.max_jobs} vaga(s) a cada {platform.interval_minutes} minutos"
@@ -231,7 +253,7 @@ def _page(platforms: dict[str, PlatformRuntime]) -> str:
   .eyebrow {{ color:var(--amber); text-transform:uppercase; font-size:11px; font-weight:800; letter-spacing:.18em; margin:0 0 10px; }}
   h1 {{ max-width:700px; margin:0; font-size:clamp(32px,5vw,55px); line-height:1.03; letter-spacing:-.055em; }} h1 em {{ color:var(--amber); font-style:normal; }} h2 {{ margin:0; font-size:14px; letter-spacing:.02em; }} p {{ color:var(--muted); }} .intro {{ max-width:650px; margin:15px 0 37px; font-size:16px; }}
   .section-label {{ display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; color:#c8d0dc; }} .step {{ color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }}
-  .grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:28px; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-bottom:28px; }}
   .platform {{ min-height:236px; text-align:left; color:inherit; background:linear-gradient(145deg, rgba(28,37,49,.96), rgba(17,22,30,.96)); border:1px solid var(--line); border-radius:17px; padding:20px; cursor:pointer; display:flex; flex-direction:column; gap:10px; transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease; }}
   .platform:hover {{ transform:translateY(-2px); border-color:#526276; background:#1a2430; }} .platform.selected {{ border-color:var(--amber); box-shadow:0 0 0 1px var(--amber), 0 15px 34px rgba(0,0,0,.2); background:linear-gradient(145deg, #252d37, #171d26); }}
   .platform:focus-visible, button.action:focus-visible {{ outline:3px solid rgba(114,183,255,.65); outline-offset:3px; }}
@@ -251,8 +273,8 @@ def _page(platforms: dict[str, PlatformRuntime]) -> str:
 <section class="status"><div class="status-main"><div class="status-head"><span id="state" class="pill">parado</span><strong id="current">Nenhuma plataforma selecionada</strong></div>
 <p id="details">Clique em um cartão para selecionar a plataforma.</p><div class="toolbar"><button id="start" class="action">Caçar</button><button id="stop" class="action">Parar caça</button><button id="continue" class="action">Continuar após login</button></div>
 <div class="log-wrap"><div class="log-head">Atividade ao vivo <span>atualiza automaticamente</span></div><pre id="logs">Aguardando uma plataforma…</pre></div></div>
-<aside class="status-side"><div class="side-title">Fluxo protegido</div><div class="side-list"><div class="side-item"><span>Busca e análise</span><b>automático</b></div><div class="side-item"><span>Rascunho</span><b>preparado</b></div><div class="side-item"><span>Envio externo</span><b>manual</b></div><div class="side-item"><span>Login e desafios</span><b>manual</b></div></div></aside>
-<p class="hint"><strong>Nota:</strong> o botão Caçar inicia o processo contínuo. A conta, Google, CAPTCHA e desafios da plataforma continuam sob confirmação manual; o envio de propostas não é automático.</p></section></main>
+<aside class="status-side"><div class="side-title">Fluxo protegido</div><div class="side-list"><div class="side-item"><span>Busca e análise</span><b>automático</b></div><div class="side-item"><span>Rascunho</span><b>preparado</b></div><div class="side-item"><span>Envio externo</span><b>{submission_label}</b></div><div class="side-item"><span>Login e desafios</span><b>manual</b></div></div></aside>
+<p class="hint"><strong>Nota:</strong> o botão Caçar inicia o processo contínuo. A conta, Google, CAPTCHA e desafios da plataforma continuam sob confirmação manual; ${submission_note}</p></section></main>
 <script>
 let selected = null;
 const cards = [...document.querySelectorAll('.platform')];

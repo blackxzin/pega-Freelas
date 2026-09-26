@@ -13,8 +13,13 @@ def main() -> None:
     snapshot = json.load(sys.stdin)
     root = Path(__file__).resolve().parents[1]
     platform = str(snapshot.get('platform') or '').lower()
-    profile_path = root / ('config/upwork_profile.yaml' if platform == 'upwork' else 'config/profile.yaml')
+    platforms = json.loads((root / 'config/platforms.json').read_text())
+    config = platforms[platform or '99freelas']
+    profile_path = root / config['profile_path']
     profile = ProfileService(str(profile_path)).load()
+    profile.locale = config['locale']
+    profile.currency = config['currency']
+    profile.pricing_path = config['pricing_path']
     result = build_quote(snapshot, profile)
     if result.get('action') == 'proposal':
         draft = ProposalDraft(0, result.get('subject', ''), result.get('message') if result.get('action') == 'proposal' else result.get('question', ''), result.get('estimated_hours') or 0, result.get('suggested_price'), result.get('questions', []))
