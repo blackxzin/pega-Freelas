@@ -170,3 +170,42 @@ Use `SMOKE_JOB_URL` para indicar um projeto específico.
 Em todas as plataformas, `DRY_RUN=true` ou `AUTO_SEND_KILL_SWITCH=true`
 bloqueiam o caminho de envio, inclusive manual. Rascunhos locais não dependem
 dos limites de envio e ficam em `state/drafts/<plataforma>/`.
+
+## Revisão, seleção e acompanhamento
+
+Inicie `python scripts/operator_panel.py` e abra `http://127.0.0.1:8765`.
+A seção **Rascunhos e resultados** permite buscar oportunidades, filtrar por
+plataforma/etapa, revisar o texto, salvar anotações e copiar a proposta.
+As oportunidades aparecem por pontuação, com os motivos de compatibilidade e
+exclusão. Desmarque **Apenas vagas compatíveis** para examinar as descartadas.
+
+As etapas são rascunho, enviada, respondida, em negociação, trabalho fechado,
+não fechado e arquivada. Alterar a etapa registra uma informação manual; não
+contata o cliente. Envios confirmados pelo fluxo do bot atualizam a fila para
+**enviada**. Os registros antigos do SQLite aparecem em uma seção separada.
+Respostas e negociações devem ser atualizadas pelo operador: a fila não faz
+sincronização automática dessas etapas com as plataformas.
+
+Configure tecnologias, termos excluídos, orçamento mínimo por moeda, tamanho
+mínimo de descrição e pontuação mínima em `config/hunt_filters.json`.
+A pontuação é uma regra explicável de compatibilidade e clareza, não uma
+probabilidade de contratação. Orçamento ausente pede confirmação e não elimina
+sozinho a oportunidade.
+
+A fila e o histórico ficam em `state/operations.db`. Vagas sem mudanças
+reutilizam a análise; alterações no conteúdo, perfil, preços, filtros ou motor
+de análise invalidam o cache. O navegador ainda relê o projeto para detectar
+mudanças. Vagas novas ou há mais tempo sem consulta têm prioridade. Textos
+editados e etapas registradas são preservados mesmo após uma nova análise.
+Uma revisão manual salva retira a oportunidade do caminho de envio automático;
+a edição deve ser copiada e enviada manualmente após revisão.
+
+Os comandos `npm run hunt:chrome`, `hunt:99:auto`, `hunt:upwork` e o painel usam
+um supervisor que reinicia o navegador após desconexão, até 3 vezes por execução
+(configurável com `BROWSER_RESTART_LIMIT`). Leituras com falhas temporárias de
+rede ou HTTP 429/5xx têm até 3 tentativas com espera crescente. No modo contínuo,
+a listagem indisponível é consultada novamente após 60 segundos. Login expirado
+pausa para ação manual e o botão **Continuar após login** retoma o processo.
+Cliques de envio não são repetidos pelo mecanismo de recuperação.
+
+A validação da Workana na conta real foi adiada; seu envio permanece desativado.

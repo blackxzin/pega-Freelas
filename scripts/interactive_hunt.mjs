@@ -9,6 +9,7 @@ import { hasExactMessage, hasPriorProjectIntroduction } from './submission_guard
 import { findExistingClientContact } from './client_contact_guard.mjs';
 import { firstLocator, getPlatform, getSelectors, normalizeJobUrl } from './selectors.mjs';
 import { saveDraft } from './draft_store.mjs';
+import { navigateWithRetry, browserDisconnected } from './recovery.mjs';
 import { loadLocalEnv } from './local_env.mjs';
 import { sendDiscordNotification } from './discord_notify.mjs';
 import { isAccessChallenge, selectUpworkGoogleAccount, waitForManualAccess } from './access_guard.mjs';
@@ -57,9 +58,16 @@ function generate(snapshot) {
   const result = spawnSync('python', ['scripts/generate_proposal.py'], {
     cwd: root,
     input: JSON.stringify(snapshot),
+    env: { ...process.env, HUNT_ANALYSIS_CACHE: 'true' },
     encoding: 'utf8',
   });
   if (result.status !== 0) throw new Error(result.stderr || 'falha ao gerar proposta');
+  return JSON.parse(result.stdout);
+}
+
+function operations(command, payload) {
+  const result = spawnSync('python', ['scripts/operations.py', command], { cwd: root, input: JSON.stringify(payload), encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || 'Falha ao acessar fila de revisão.');
   return JSON.parse(result.stdout);
 }
 
@@ -329,7 +337,7 @@ async function verifyQuestion(page, messagePageUrl, expected) {
 }
 
 async function fillJob(page, link) {
-  await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await navigateWithRetry(page, link, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await ensureAccess(page);
   if (platform.name === 'upwork' || platform.name === 'workana') {
     await page.waitForTimeout(Math.max(1000, Number(process.env.JOB_RENDER_WAIT_MS || 3000)));
@@ -347,7 +355,11 @@ async function fillJob(page, link) {
   snapshot.client_history = clientHistory(snapshot.client_key);
   snapshot.confirmed_context = clientContext(snapshot.client_key);
   const draft = forceProposalDraft(generate(snapshot), snapshot);
-  if (draft.action === 'skip') return { skipped: draft.reason };
+  console.log(JSON.stringify({ event: draft.cache_hit ? 'analysis_cached' : 'job_ranked', score: draft.selection?.score, reasons: draft.selection?.reasons, exclusions: draft.selection?.exclusions }));
+  if (draft.outcome && draft.outcome !== 'draft') return { skipped: `Vaga já acompanhada no painel: ${draft.outcome}`, cached: draft.cache_hit };
+  if (draft.action === 'skip') return { skipped: draft.reason, cached: draft.cache_hit };
+  if (draft.reviewed) return { skipped: 'Revisão manual salva no painel; envio deve ser feito após revisão.', cached: draft.cache_hit };
+  if (draft.cache_hit && (!platform.allow_submission || dryRun || killSwitch)) return { skipped: 'Vaga sem alterações; rascunho já disponível no painel.', cached: true };
   console.log(JSON.stringify({ tasks: draft.breakdown, price_range: draft.price_range,
     client_total_range: draft.client_total_range, days_range: draft.days_range,
     questions: draft.questions, commercial_reference: draft.knowledge }, null, 2));
@@ -434,7 +446,14 @@ async function main() {
     let firstCycle = true;
     let idleCycles = 0;
     while (true) {
-    await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    try {
+      await navigateWithRetry(page, listingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (error) {
+      if (browserDisconnected(error) || !runForever) throw error;
+      console.error(`Listagem indisponível; nova tentativa em 60 segundos: ${error.message}`);
+      await page.waitForTimeout(60000);
+      continue;
+    }
     await ensureAccess(page);
     if (firstCycle && process.env.AUTO_LOGIN_PROMPT !== 'false' && !autoSend) await ask('Faça login manualmente no Chromium. Quando terminar, pressione Enter aqui: ');
     const links = targetJobUrl ? [{ href: targetJobUrl, text: targetJobUrl }] : await (async () => {
@@ -462,9 +481,10 @@ async function main() {
     }
     let processed = 0;
     let inspected = 0;
+    let analyzed = 0;
     let cycleSent = 0;
-    for (const item of links) {
-    if (inspected >= maxJobs) break;
+    for (const item of operations('order', { links })) {
+    if (analyzed >= maxJobs || inspected >= maxJobs * 10) break;
     inspected += 1;
     if (premium.test(item.text)) continue;
     const jobPage = await context.newPage();
@@ -472,6 +492,7 @@ async function main() {
     await jobPage.bringToFront();
     await humanPause();
     const result = await fillJob(jobPage, item.href);
+    if (!result.cached) analyzed += 1;
     if (result.skipped) { console.log(`IGNORADA: ${result.skipped} — ${item.href}`); continue; }
     if (result.draft.validation_status && result.draft.validation_status !== 'PASSED' && !forceProposal) {
       console.log(`IGNORADA: proposta não passou validação — ${(result.draft.validation_reasons || []).join('; ')}`);
@@ -591,10 +612,12 @@ async function main() {
           const confirmed = await verifyQuestion(jobPage, sendPageUrl, sendMessage);
           if (!confirmed) throw new Error('O site não confirmou a mensagem na conversa; envio não será repetido automaticamente.');
           markSent(tracked.proposal_id, `question-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
+          operations('sent', { url: result.snapshot.url });
           cycleSent += 1;
           console.log(`${fallbackFromProposalLimit ? 'MENSAGEM FALLBACK' : 'MENSAGEM'} CONFIRMADA na conversa: ${jobPage.url()}`);
         } else if (response?.ok()) {
           markSent(tracked.proposal_id, `proposal-${tracked.proposal_id}`, conversationIdFromUrl(jobPage.url()));
+          operations('sent', { url: result.snapshot.url });
           cycleSent += 1;
           console.log(`ENVIO CONFIRMADO pelo site (HTTP ${response.status()}). Página atual: ${jobPage.url()}`);
         } else {
@@ -604,6 +627,7 @@ async function main() {
       else console.log('Botão de envio não localizado; rascunho preservado.');
     }
     } catch (error) {
+      if (browserDisconnected(error)) throw error;
       console.error(`FALHA na vaga ${item.href}: ${error.message}`);
     } finally {
       await jobPage.close().catch(() => {});
@@ -624,9 +648,9 @@ async function main() {
     else await page.waitForTimeout(1000);
     }
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
     rl.close();
   }
 }
 
-main().catch((error) => { console.error(error.message); rl.close(); process.exitCode = 1; });
+main().catch((error) => { console.error(error.message); rl.close(); process.exitCode = browserDisconnected(error) ? 75 : 1; });

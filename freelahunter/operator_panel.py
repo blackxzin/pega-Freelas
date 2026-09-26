@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sqlite3
 import subprocess
 import threading
 import time
@@ -16,6 +17,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from freelahunter.operations import OperationsStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,7 +98,7 @@ def hunter_environment(platform: PlatformRuntime, base: dict[str, str] | None = 
 
 def hunter_command(root: str | Path = ROOT) -> list[str]:
     """Build the process command without invoking a shell."""
-    return ["node", str(Path(root) / "scripts" / "interactive_hunt.mjs")]
+    return ["node", str(Path(root) / "scripts" / "hunt_runner.mjs")]
 
 
 class HunterProcessManager:
@@ -239,6 +242,7 @@ def _page(platforms: dict[str, PlatformRuntime]) -> str:
             </button>'''
         )
     cards_html = "".join(cards)
+    review_html = (ROOT / "freelahunter/static/review.html").read_text()
     return f'''<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FreelaHunter · Central de caça</title>
@@ -274,7 +278,7 @@ def _page(platforms: dict[str, PlatformRuntime]) -> str:
 <p id="details">Clique em um cartão para selecionar a plataforma.</p><div class="toolbar"><button id="start" class="action">Caçar</button><button id="stop" class="action">Parar caça</button><button id="continue" class="action">Continuar após login</button></div>
 <div class="log-wrap"><div class="log-head">Atividade ao vivo <span>atualiza automaticamente</span></div><pre id="logs">Aguardando uma plataforma…</pre></div></div>
 <aside class="status-side"><div class="side-title">Fluxo protegido</div><div class="side-list"><div class="side-item"><span>Busca e análise</span><b>automático</b></div><div class="side-item"><span>Rascunho</span><b>preparado</b></div><div class="side-item"><span>Envio externo</span><b>{submission_label}</b></div><div class="side-item"><span>Login e desafios</span><b>manual</b></div></div></aside>
-<p class="hint"><strong>Nota:</strong> o botão Caçar inicia o processo contínuo. A conta, Google, CAPTCHA e desafios da plataforma continuam sob confirmação manual; ${submission_note}</p></section></main>
+<p class="hint"><strong>Nota:</strong> o botão Caçar inicia o processo contínuo. A conta, Google, CAPTCHA e desafios da plataforma continuam sob confirmação manual; {submission_note}</p></section>{review_html}</main>
 <script>
 let selected = null;
 const cards = [...document.querySelectorAll('.platform')];
@@ -301,10 +305,31 @@ setInterval(refresh, 2500); refresh();
 </script></body></html>'''
 
 
+def review_request(root, identifier=None, payload=None):
+    store = OperationsStore(root)
+    try:
+        if identifier:
+            return store.update(identifier, payload) if payload is not None else store.get(identifier)
+        store.import_drafts()
+        data = store.listing()
+        data['legacy'] = []
+        database = Path(root) / 'freelahunter.db'
+        if database.exists():
+            conn = sqlite3.connect(f'file:{database}?mode=ro', uri=True)
+            try:
+                conn.row_factory = sqlite3.Row
+                data['legacy'] = [dict(row) for row in conn.execute("SELECT id,subject,status,outcome_status FROM proposals WHERE status IN ('SENT','SENDING') ORDER BY id DESC LIMIT 100")]
+            finally:
+                conn.close()
+        return data
+    finally:
+        store.close()
+
+
 def create_operator_app(manager: HunterProcessManager | None = None):
     try:
         from fastapi import FastAPI, HTTPException
-        from fastapi.responses import HTMLResponse
+        from fastapi.responses import HTMLResponse, Response
     except ImportError:
         return None
 
@@ -323,6 +348,30 @@ def create_operator_app(manager: HunterProcessManager | None = None):
     @app.get("/api/status")
     def status():
         return controller.status()
+
+    @app.get('/review.js')
+    def review_script():
+        return Response((ROOT / 'freelahunter/static/review.js').read_text(), media_type='application/javascript')
+
+    @app.get('/api/review')
+    def reviews():
+        return review_request(controller.root)
+
+    @app.get('/api/review/{identifier}')
+    def review(identifier: str):
+        try:
+            return review_request(controller.root, identifier)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+
+    @app.post('/api/review/{identifier}')
+    def save_review(identifier: str, payload: dict):
+        try:
+            return review_request(controller.root, identifier, payload)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
     @app.post("/api/start/{platform_name}")
     def start(platform_name: str):
@@ -362,7 +411,7 @@ def serve_operator_panel(host: str = "127.0.0.1", port: int = 8765,
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, payload: Any, status: int = 200, content_type: str = "application/json"):
-            if content_type == "text/html":
+            if content_type in {"text/html", "application/javascript"}:
                 body = payload.encode("utf-8")
             else:
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -376,6 +425,13 @@ def serve_operator_panel(host: str = "127.0.0.1", port: int = 8765,
             path = urlparse(self.path).path
             if path == "/":
                 self._send(_page(controller.platforms), content_type="text/html")
+            elif path == '/review.js':
+                self._send((ROOT / 'freelahunter/static/review.js').read_text(), content_type='application/javascript')
+            elif path == '/api/review' or path.startswith('/api/review/'):
+                try:
+                    self._send(review_request(controller.root, path.rsplit('/', 1)[-1] if path.startswith('/api/review/') else None))
+                except ValueError as error:
+                    self._send({'detail': str(error)}, 404)
             elif path == "/api/status":
                 self._send(controller.status())
             elif path == "/api/platforms":
@@ -386,7 +442,13 @@ def serve_operator_panel(host: str = "127.0.0.1", port: int = 8765,
         def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
             path = urlparse(self.path).path
             try:
-                if path.startswith("/api/start/"):
+                if path.startswith('/api/review/'):
+                    size = int(self.headers.get('Content-Length', '0'))
+                    if size <= 0 or size > 65536:
+                        raise ValueError('Tamanho da revisão inválido.')
+                    payload = json.loads(self.rfile.read(size))
+                    result = review_request(controller.root, path.rsplit('/', 1)[-1], payload)
+                elif path.startswith("/api/start/"):
                     result = controller.start(unquote(path.rsplit("/", 1)[-1]))
                 elif path == "/api/stop":
                     result = controller.stop()

@@ -50,7 +50,7 @@ def test_hunter_environment_supports_explicit_continuous_auto_mode():
 
 def test_hunter_command_does_not_use_shell():
     command = hunter_command(ROOT)
-    assert command == ["node", str(ROOT / "scripts" / "interactive_hunt.mjs")]
+    assert command == ["node", str(ROOT / "scripts" / "hunt_runner.mjs")]
 
 
 def test_manager_rejects_unknown_platform_without_starting():
