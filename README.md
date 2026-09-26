@@ -56,7 +56,7 @@ python scripts/dashboard.py
 Defina `DISCORD_WEBHOOK_URL` em `.env`. `INBOX_POLL_SECONDS` controla o intervalo
 (mínimo de 20 segundos). O monitor usa a sessão manual do Chromium, alerta
 somente conversa não lida do cliente e inclui link para responder dentro do
-99Freelas. Falhas temporárias do Discord são repetidas com backoff; falhas de
+99Freelas. Falhas temporárias do Discord são repetidas com backoff, falhas de
 leitura não encerram o monitor. O estado local impede alertas duplicados após
 reiniciar.
 
